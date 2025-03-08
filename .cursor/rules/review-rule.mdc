@@ -1,0 +1,246 @@
+---
+description: this helps in the mmorgp development
+globs: 
+alwaysApply: false
+---
+# Ragnarok Online Game Development Rules
+
+Description: Regras detalhadas para o desenvolvimento de um MMORPG 2.5D inspirado em Ragnarok Online usando Three.js. Este arquivo define a estrutura do projeto, padrões de codificação, desenvolvimento de mecânicas de MMORPG online (multiplayer, progressão, combate, etc.), revisões de código e boas práticas para criar um jogo completo e funcional.
+
+Globs:
+- **/src/**/*.js
+- **/src/**/*.ts
+- !node_modules/**/*
+
+---
+
+## Contexto do Projeto
+
+- **Objetivo**: Criar um MMORPG 2.5D com câmera isométrica fixa, sprites 2D em um ambiente 3D, mapas baseados em grades, suporte a multiplayer em tempo real, sistemas de combate, progressão de personagem e interação social, replicando o estilo de Ragnarok Online.
+- **Tecnologias Principais**:
+  - Three.js (renderização 3D e manipulação de cenas).
+  - TypeScript (tipagem estática e organização).
+  - WebSocket (comunicação multiplayer em tempo real via `socket.js`).
+  - WebGL (desempenho gráfico).
+- **Estilo Visual**:
+  - Sprites 2D (`THREE.Sprite`) para personagens, monstros e itens.
+  - Mapas isométricos com tiles texturizados em uma grade XZ.
+- **Funcionalidades Chave**:
+  - Câmera isométrica fixa (45° X e Y) seguindo o jogador.
+  - Movimento em grade isométrica com colisão.
+  - Sistema de combate em tempo real com habilidades.
+  - Multiplayer sincronizado (movimento, chat, grupos).
+  - Progressão de personagem (níveis, atributos, equipamentos).
+  - Interface de usuário interativa (HUD, inventário, chat).
+
+---
+
+## Estrutura do Projeto
+
+### Visão Geral
+- `/src`: Código-fonte principal.
+  - `/core`: Módulos centrais do jogo.
+    - `game.js`: Controlador principal (loop de animação, integração de sistemas).
+    - `camera.js`: Configuração e lógica da câmera isométrica.
+    - `scene.js`: Gerenciamento da cena Three.js (objetos, luzes, renderização).
+    - `input.js`: Captura de entradas do usuário (teclado, mouse).
+    - `socket.js`: Comunicação multiplayer via WebSocket.
+  - `/entities`: Classes de entidades do jogo.
+    - `entity.js`: Classe base abstrata (posição, sprite, ID único).
+    - `player.js`: Lógica do jogador (herda de `entity.js`).
+    - `monster.js`: Lógica de monstros (herda de `entity.js`).
+  - `/systems`: Sistemas de jogo independentes.
+    - `animation.js`: Controle de animações de sprites.
+    - `combat.js`: Mecânicas de combate (ataques, danos, habilidades).
+    - `movement.js`: Movimento isométrico em grade XZ.
+  - `/ui`: Interface do usuário.
+    - `interface.js`: HUD, menus, inventário, chat.
+  - `main.js`: Ponto de entrada (inicializa o jogo e carrega assets).
+- `/assets`: Recursos estáticos.
+  - `/models`: Modelos 3D (opcional).
+  - `/textures`: Texturas para tiles e mapas.
+  - `/sprites`: Imagens 2D para personagens, monstros e itens.
+- `/public`: Arquivos públicos.
+  - `index.html`: Página inicial.
+  - `style.css`: Estilos CSS para HUD e layout.
+
+### Regras de Organização
+- Cada arquivo deve exportar uma classe ou funções específicas (`export default` ou `export`).
+- Use `import` para dependências entre módulos.
+- Crie `src/core/constants.ts` para constantes globais (ex.: `TILE_SIZE`, `MAX_PLAYERS`).
+
+---
+
+## Desenvolvimento de Mecânicas de MMORPG Online
+
+### 1. Câmera Isométrica
+- **Implementação**: 
+  - Use `OrthographicCamera` em `/core/camera.js`.
+  - Posição: `(CAMERA_DISTANCE * √2/2, CAMERA_DISTANCE, CAMERA_DISTANCE * √2/2)`.
+  - Rotação: `x: -45°`, `y: 45°`.
+  - Método `update(playerPosition)` com suavização (`lerp`, fator 0.1).
+- **Requisitos**:
+  - Sempre focada no jogador ativo.
+  - Suporte a zoom opcional (ajuste `zoom` da câmera).
+
+### 2. Movimento Isométrico
+- **Arquivo**: `/systems/movement.js`.
+- **Lógica**:
+  - Movimento em grade XZ com passos de `TILE_SIZE`.
+  - Direções em 45° (ex.: `x += TILE_SIZE * cos(π/4)` para "cima-esquerda").
+  - Verifique colisão com tiles do mapa e outras entidades.
+- **Sincronização**:
+  - Envie posição atualizada via WebSocket para o servidor.
+  - Interpole movimento de outros jogadores para suavidade.
+
+### 3. Sistema de Combate
+- **Arquivo**: `/systems/combat.js`.
+- **Mecânicas**:
+  - Ataque básico: Clique no alvo (monstro ou jogador) para ataque corpo a corpo.
+  - Habilidades: Lista de skills com alcance, dano e cooldown (ex.: "Fire Bolt", "Heal").
+  - Cálculo de dano: `dano = ataque - defesa * 0.5` (ajustável).
+- **Sincronização**:
+  - Envie ações de combate ao servidor (ex.: `{ type: 'attack', targetId: 123 }`).
+  - Receba confirmação do servidor antes de aplicar dano localmente.
+- **Animações**: Use `/systems/animation.js` para efeitos visuais (ex.: sprite de golpe).
+
+### 4. Multiplayer
+- **Arquivo**: `/core/socket.js`.
+- **Infraestrutura**:
+  - Conecte ao servidor WebSocket (ex.: `wss://server.example.com`).
+  - Estrutura de mensagens:
+    ```typescript
+    interface NetworkMessage {
+      type: string;      // Ex.: 'move', 'attack', 'chat'
+      playerId: string;  // ID único do jogador
+      data: any;         // Dados específicos (posição, alvo, mensagem)
+    }
+    ```
+- **Funcionalidades**:
+  - Sincronize posição e ações de todos os jogadores.
+  - Suporte a chat global e em grupo.
+  - Gerencie entrada/saída de jogadores na cena.
+- **Segurança**:
+  - Valide todas as ações no servidor (ex.: distância de ataque).
+
+### 5. Progressão de Personagem
+- **Arquivo**: `/entities/player.js`.
+- **Atributos**:
+  - Nível, experiência (XP), atributos (força, agilidade, etc.), HP, MP.
+  - Equipamentos (arma, armadura) afetam stats.
+- **Mecânicas**:
+  - Ganhe XP ao derrotar monstros (ex.: `xp += monster.level * 10`).
+  - Suba de nível ao atingir XP necessário (ex.: `xpNeeded = level * 100`).
+  - Distribua pontos de atributo manualmente ou automaticamente.
+- **Persistência**: Envie dados ao servidor para salvar progresso.
+
+### 6. Monstros e IA
+- **Arquivo**: `/entities/monster.js`.
+- **Comportamento**:
+  - Patrulha: Movimentação aleatória em uma área (ex.: 5 tiles de raio).
+  - Agressividade: Persiga jogadores dentro de um raio de visão (ex.: 10 tiles).
+  - Respawn: Reapareça após X segundos (ex.: 30s).
+- **Sincronização**: Monstros controlados pelo servidor; clientes apenas renderizam.
+
+### 7. Mapas e Colisão
+- **Arquivo**: `/core/scene.js`.
+- **Estrutura**:
+  - Mapa como grade de tiles (`PlaneGeometry`) com texturas isométricas.
+  - Armazene dados de colisão em um array 2D (ex.: `0 = transitável`, `1 = bloqueado`).
+- **Carregamento**: Leia mapas de arquivos JSON em `/assets/maps/`.
+
+### 8. Interface de Usuário
+- **Arquivo**: `/ui/interface.js`.
+- **Componentes**:
+  - HUD: Barra de HP/MP, nível, XP.
+  - Inventário: Grid de itens com drag-and-drop.
+  - Chat: Janela com abas (global, grupo, privado).
+  - Menu: Opções de jogo (sair, configurações).
+- **Integração**: Use DOM ou canvas 2D sobreposto à cena Three.js.
+
+### 9. Sistema de Grupos e Social
+- **Arquivo**: `/core/socket.js` e `/ui/interface.js`.
+- **Mecânicas**:
+  - Convide jogadores para grupos (máximo de 12, como em Ragnarok).
+  - Compartilhe XP e itens entre membros do grupo.
+  - Chat de grupo separado.
+
+---
+
+## Regras de Codificação
+
+- **Estilo**:
+  - Use TypeScript com tipos explícitos.
+  - CamelCase para variáveis/funções, PascalCase para classes.
+  - JSDoc para documentação.
+- **Constantes**: Defina em `src/core/constants.ts` (ex.: `TILE_SIZE = 1`, `MAX_GROUP_SIZE = 12`).
+- **Modularidade**: Cada sistema deve ser independente e testável.
+
+---
+
+## Revisão de Código (Code Review)
+
+- **Funcionalidades**:
+  - Câmera segue o jogador e mantém o ângulo isométrico?
+  - Movimento é suave e sincronizado entre clientes?
+  - Combate aplica dano corretamente e respeita cooldowns?
+  - Multiplayer reflete ações de outros jogadores em tempo real?
+- **Performance**:
+  - Evite criar objetos no loop (reutilize sprites, materiais).
+  - Limite entidades visíveis (ex.: 50 monstros/jogadores).
+- **Segurança**:
+  - Valide movimentos e ataques no servidor.
+
+---
+
+## Boas Práticas
+
+- **Otimização**:
+  - Pré-carregue assets em `main.js`.
+  - Use pooling para monstros e efeitos.
+- **Erro**:
+  - Adicione `try/catch` em `socket.js`.
+  - Limite ações fora do mapa ou inválidas.
+- **Testes**:
+  - Teste combate com alvos fictícios.
+  - Simule latência de rede em `socket.js`.
+
+---
+
+## Comportamento do Cursor AI
+
+- Gere código TypeScript alinhado à estrutura.
+- Sugira implementações completas para cada mecânica (ex.: combate, movimento).
+- Inclua JSDoc e comentários explicativos.
+- Durante revisões, foque em sincronização multiplayer e desempenho.
+
+---
+
+## Exemplo de Código Esperado
+
+```typescript
+// /src/systems/movement.ts
+import * as THREE from 'three';
+import { Player } from '../entities/player';
+import { sendMessage } from '../core/socket';
+
+const TILE_SIZE = 1;
+
+export function movePlayer(player: Player, direction: string, delta: number): void {
+  const speed = TILE_SIZE * delta;
+  const newPosition = player.position.clone();
+
+  switch (direction) {
+    case 'up':
+      newPosition.x -= speed * Math.cos(Math.PI / 4);
+      newPosition.z -= speed * Math.sin(Math.PI / 4);
+      break;
+    // Outras direções...
+  }
+
+  // Verificar colisão (simplificado)
+  if (isValidPosition(newPosition)) {
+    player.position.copy(newPosition);
+    sendMessage({ type: 'move', playerId: player.id, data: newPosition });
+  }
+}

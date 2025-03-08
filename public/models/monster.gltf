@@ -1,0 +1,88 @@
+{
+  "asset": {
+    "generator": "MMORPG Game",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [0]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "Monster"
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2,
+          "material": 0
+        }
+      ],
+      "name": "Monster"
+    }
+  ],
+  "materials": [
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 0.2, 0.2, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 1.0
+      },
+      "name": "MonsterMaterial"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 24,
+      "max": [0.5, 0.8, 0.5],
+      "min": [-0.5, 0.0, -0.5],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 36,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 288,
+      "byteOffset": 0
+    },
+    {
+      "buffer": 0,
+      "byteLength": 288,
+      "byteOffset": 288
+    },
+    {
+      "buffer": 0,
+      "byteLength": 72,
+      "byteOffset": 576
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 648,
+      "uri": "data:application/octet-stream;base64,AAAAvwAAAAAAAIA/AAAAvwAAAAAAAIA/AAAAvwAAAAAAAIA/AAAAPwAAAAAAAIA/AAAAPwAAAAAAAIA/AAAAPwAAAAAAAIA/AAAAPwAAAAAAAIC/AAAAPwAAAAAAAIC/AAAAPwAAAAAAAIC/AAAAvwAAAAAAAIC/AAAAvwAAAAAAAIC/AAAAvwAAAAAAAIC/AAAAvwAAAEAAAAC/AAAAvwAAAEAAAAC/AAAAvwAAAEAAAAC/AAAAvwAAAEAAAAA/AAAAvwAAAEAAAAA/AAAAvwAAAEAAAAA/AAAAPwAAAEAAAAA/AAAAPwAAAEAAAAA/AAAAPwAAAEAAAAA/AAAAPwAAAEAAAAC/AAAAPwAAAEAAAAC/AAAAPwAAAEAAAAC/AAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAABAAIAAwAEAAUABgAHAAgACQAKAAsADAANAA4ADwAQABEAEgATABUAFAAVABYAFwAYABkA"
+    }
+  ]
+} 
