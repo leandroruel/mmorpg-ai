@@ -1,7 +1,3 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { io } from 'socket.io-client';
 import { MMORPGGame } from './game/core/game';
 
 // Registrar o tempo de início para fins de depuração
