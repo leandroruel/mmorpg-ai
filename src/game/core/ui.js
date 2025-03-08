@@ -41,19 +41,82 @@ export class UserInterface {
       this.elements.progressText = document.getElementById('loading-text');
     }
     
-    // HUD
+    // HUD e elementos de jogador
     if (!this.elements.hud) {
       this.elements.hud = document.getElementById('hud');
       
       if (this.elements.hud) {
+        // Buscar elementos dentro do HUD
         this.elements.playerName = document.getElementById('player-name');
         this.elements.playerClass = document.getElementById('player-class');
-        this.elements.hpBar = document.getElementById('player-hp-bar');
-        this.elements.mpBar = document.getElementById('player-mp-bar');
-        this.elements.hpText = document.getElementById('player-hp-text');
-        this.elements.mpText = document.getElementById('player-mp-text');
-        this.elements.controlsInfo = document.getElementById('controls-info');
+        this.elements.playerHp = document.getElementById('player-hp');
+        this.elements.playerMaxHp = document.getElementById('player-max-hp');
+        
+        // Adicionar barras de HP/MP se não existirem
+        if (!document.getElementById('hp-bar')) {
+          const hpBarContainer = createElement('div', {
+            width: '100%',
+            height: '10px',
+            backgroundColor: '#333',
+            marginTop: '5px',
+            borderRadius: '5px',
+            overflow: 'hidden'
+          }, { id: 'hp-bar-container' }, '', this.elements.hud);
+          
+          this.elements.hpBar = createElement('div', {
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#e53935',
+            transition: 'width 0.3s'
+          }, { id: 'hp-bar' }, '', hpBarContainer);
+        } else {
+          this.elements.hpBar = document.getElementById('hp-bar');
+        }
+        
+        if (!document.getElementById('mp-bar')) {
+          const mpBarContainer = createElement('div', {
+            width: '100%',
+            height: '10px',
+            backgroundColor: '#333',
+            marginTop: '5px',
+            borderRadius: '5px',
+            overflow: 'hidden'
+          }, { id: 'mp-bar-container' }, '', this.elements.hud);
+          
+          this.elements.mpBar = createElement('div', {
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#2196F3',
+            transition: 'width 0.3s'
+          }, { id: 'mp-bar' }, '', mpBarContainer);
+        } else {
+          this.elements.mpBar = document.getElementById('mp-bar');
+        }
+        
+        // Elementos de texto para HP/MP
+        if (!document.getElementById('hp-text')) {
+          this.elements.hpText = createElement('div', {
+            marginTop: '5px',
+            fontSize: '12px'
+          }, { id: 'hp-text' }, 'HP: 100/100', this.elements.hud);
+        } else {
+          this.elements.hpText = document.getElementById('hp-text');
+        }
+        
+        if (!document.getElementById('mp-text')) {
+          this.elements.mpText = createElement('div', {
+            marginTop: '5px',
+            fontSize: '12px'
+          }, { id: 'mp-text' }, 'MP: 50/50', this.elements.hud);
+        } else {
+          this.elements.mpText = document.getElementById('mp-text');
+        }
       }
+    }
+    
+    // Informações de controles
+    if (!this.elements.controlsInfo) {
+      this.elements.controlsInfo = document.getElementById('controls-info');
     }
   }
   
@@ -162,33 +225,154 @@ export class UserInterface {
   }
   
   /**
-   * Atualiza as informações do jogador no HUD
-   * @param {Object} player - Dados do jogador
+   * Atualiza as informações do jogador na interface
+   * @param {Object} player - Objeto do jogador
    * @param {string} className - Nome da classe do jogador
    */
   updatePlayerInfo(player, className) {
-    if (this.elements.playerName) {
-      this.elements.playerName.textContent = player.name;
+    // Verificar se temos os elementos necessários
+    const nameElement = document.getElementById('player-name');
+    const classElement = document.getElementById('player-class');
+    const hpElement = document.getElementById('player-hp');
+    const maxHpElement = document.getElementById('player-max-hp');
+    
+    // Garantir que temos o elemento de MP (criar se não existir)
+    let mpElement = document.getElementById('player-mp');
+    let maxMpElement = document.getElementById('player-max-mp');
+    
+    if (!mpElement || !maxMpElement) {
+      // Buscar o HUD
+      const hud = document.getElementById('hud');
+      if (hud) {
+        // Criar elemento de MP se não existir
+        if (!document.getElementById('mp-container')) {
+          const mpContainer = document.createElement('div');
+          mpContainer.id = 'mp-container';
+          mpContainer.innerHTML = 'MP: <span id="player-mp">0</span>/<span id="player-max-mp">100</span>';
+          hud.appendChild(mpContainer);
+          
+          mpElement = document.getElementById('player-mp');
+          maxMpElement = document.getElementById('player-max-mp');
+        }
+      }
     }
     
-    if (this.elements.playerClass) {
-      this.elements.playerClass.textContent = className;
-    }
+    // Atualizar nome e classe
+    if (nameElement) nameElement.textContent = player.name || 'Desconhecido';
+    if (classElement) classElement.textContent = className || 'Guerreiro';
     
-    if (this.elements.hpBar) {
-      this.elements.hpBar.style.width = `${(player.hp / player.maxHp) * 100}%`;
-    }
+    // Obter HP e MP do jogador com valores seguros
+    const hp = player.combatStats?.hp || player.hp || 0;
+    const maxHp = player.combatStats?.maxHp || player.maxHp || 100;
+    const mp = player.combatStats?.mp || player.mp || 0;
+    const maxMp = player.combatStats?.maxMp || player.maxMp || 100;
     
-    if (this.elements.mpBar) {
-      this.elements.mpBar.style.width = `${(player.mp / player.maxMp) * 100}%`;
-    }
+    // Garantir que são valores numéricos
+    const safeHp = Number(hp) || 0;
+    const safeMaxHp = Number(maxHp) || 100;
+    const safeMp = Number(mp) || 0;
+    const safeMaxMp = Number(maxMp) || 100;
     
-    if (this.elements.hpText) {
-      this.elements.hpText.textContent = `${player.hp} / ${player.maxHp}`;
-    }
+    // Debug para rastrear valores
+    console.log(`[UI.updatePlayerInfo] Atualizando UI: HP=${safeHp}/${safeMaxHp}, MP=${safeMp}/${safeMaxMp}`);
     
-    if (this.elements.mpText) {
-      this.elements.mpText.textContent = `${player.mp} / ${player.maxMp}`;
+    // Atualizar HP
+    if (hpElement) hpElement.textContent = Math.floor(safeHp);
+    if (maxHpElement) maxHpElement.textContent = Math.floor(safeMaxHp);
+    
+    // Atualizar MP
+    if (mpElement) mpElement.textContent = Math.floor(safeMp);
+    if (maxMpElement) maxMpElement.textContent = Math.floor(safeMaxMp);
+    
+    // Atualizar barras de progresso se existirem
+    this.updateProgressBars(safeHp / safeMaxHp, safeMp / safeMaxMp);
+  }
+  
+  /**
+   * Atualiza as barras de progresso de HP e MP
+   * @param {number} hpPercent - Porcentagem de HP (0-1)
+   * @param {number} mpPercent - Porcentagem de MP (0-1)
+   */
+  updateProgressBars(hpPercent, mpPercent) {
+    // Verificar se as barras de progresso existem
+    let hpBar = document.getElementById('hp-bar');
+    let mpBar = document.getElementById('mp-bar');
+    
+    // Criar barras se não existirem
+    if (!hpBar || !mpBar) {
+      const hud = document.getElementById('hud');
+      if (hud) {
+        // Adicionar estilos ao hud para barras de progresso
+        const statBarsContainer = document.createElement('div');
+        statBarsContainer.id = 'stat-bars';
+        statBarsContainer.style.marginTop = '10px';
+        
+        // Criar barra de HP
+        const hpBarContainer = document.createElement('div');
+        hpBarContainer.style.width = '100%';
+        hpBarContainer.style.height = '15px';
+        hpBarContainer.style.backgroundColor = '#444';
+        hpBarContainer.style.borderRadius = '3px';
+        hpBarContainer.style.marginBottom = '5px';
+        hpBarContainer.style.position = 'relative';
+        
+        hpBar = document.createElement('div');
+        hpBar.id = 'hp-bar';
+        hpBar.style.width = `${hpPercent * 100}%`;
+        hpBar.style.height = '100%';
+        hpBar.style.backgroundColor = '#e74c3c';
+        hpBar.style.borderRadius = '3px';
+        hpBar.style.transition = 'width 0.3s';
+        
+        const hpLabel = document.createElement('div');
+        hpLabel.textContent = 'HP';
+        hpLabel.style.position = 'absolute';
+        hpLabel.style.left = '5px';
+        hpLabel.style.top = '0';
+        hpLabel.style.fontSize = '10px';
+        hpLabel.style.color = 'white';
+        
+        hpBarContainer.appendChild(hpBar);
+        hpBarContainer.appendChild(hpLabel);
+        
+        // Criar barra de MP
+        const mpBarContainer = document.createElement('div');
+        mpBarContainer.style.width = '100%';
+        mpBarContainer.style.height = '15px';
+        mpBarContainer.style.backgroundColor = '#444';
+        mpBarContainer.style.borderRadius = '3px';
+        mpBarContainer.style.position = 'relative';
+        
+        mpBar = document.createElement('div');
+        mpBar.id = 'mp-bar';
+        mpBar.style.width = `${mpPercent * 100}%`;
+        mpBar.style.height = '100%';
+        mpBar.style.backgroundColor = '#3498db';
+        mpBar.style.borderRadius = '3px';
+        mpBar.style.transition = 'width 0.3s';
+        
+        const mpLabel = document.createElement('div');
+        mpLabel.textContent = 'MP';
+        mpLabel.style.position = 'absolute';
+        mpLabel.style.left = '5px';
+        mpLabel.style.top = '0';
+        mpLabel.style.fontSize = '10px';
+        mpLabel.style.color = 'white';
+        
+        mpBarContainer.appendChild(mpBar);
+        mpBarContainer.appendChild(mpLabel);
+        
+        // Adicionar barras ao container
+        statBarsContainer.appendChild(hpBarContainer);
+        statBarsContainer.appendChild(mpBarContainer);
+        
+        // Adicionar ao HUD
+        hud.appendChild(statBarsContainer);
+      }
+    } else {
+      // Atualizar valores das barras existentes
+      hpBar.style.width = `${Math.max(0, Math.min(100, hpPercent * 100))}%`;
+      mpBar.style.width = `${Math.max(0, Math.min(100, mpPercent * 100))}%`;
     }
   }
   
@@ -357,5 +541,214 @@ export class UserInterface {
     });
     
     return loginScreen;
+  }
+  
+  /**
+   * Mostra uma mensagem temporária na tela
+   * @param {string} text - Texto da mensagem
+   * @param {number} duration - Duração em ms (padrão: 3000ms)
+   * @param {string} type - Tipo da mensagem (padrão: 'info', pode ser 'error', 'success', etc)
+   */
+  showMessage(text, duration = 3000, type = 'info') {
+    console.log(`[UI] Mensagem: ${text}`);
+    
+    // Verificar se já temos um elemento de mensagem
+    let messageElement = document.getElementById('game-message');
+    
+    // Se não existir, criar um novo
+    if (!messageElement) {
+      const styles = {
+        position: 'absolute',
+        top: '100px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        padding: '10px 20px',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        color: 'white',
+        borderRadius: '5px',
+        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '16px',
+        textAlign: 'center',
+        zIndex: '1000',
+        transition: 'opacity 0.3s, transform 0.3s',
+        opacity: '0',
+        transform: 'translateX(-50%) translateY(-20px)'
+      };
+      
+      // Ajustar cores baseado no tipo
+      if (type === 'error') {
+        styles.backgroundColor = 'rgba(220, 53, 69, 0.9)';
+      } else if (type === 'success') {
+        styles.backgroundColor = 'rgba(40, 167, 69, 0.9)';
+      } else if (type === 'exp') {
+        styles.backgroundColor = 'rgba(255, 193, 7, 0.9)';
+        styles.color = 'black';
+      }
+      
+      // Criar elemento
+      messageElement = createElement('div', styles, { id: 'game-message' }, '', document.body);
+    }
+    
+    // Definir texto e aplicar estilo específico para o tipo
+    messageElement.textContent = text;
+    
+    if (type === 'error') {
+      messageElement.style.backgroundColor = 'rgba(220, 53, 69, 0.9)';
+    } else if (type === 'success') {
+      messageElement.style.backgroundColor = 'rgba(40, 167, 69, 0.9)';
+    } else if (type === 'exp') {
+      messageElement.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
+      messageElement.style.color = 'black';
+    } else {
+      messageElement.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+      messageElement.style.color = 'white';
+    }
+    
+    // Mostrar com animação
+    setTimeout(() => {
+      messageElement.style.opacity = '1';
+      messageElement.style.transform = 'translateX(-50%) translateY(0)';
+    }, 10);
+    
+    // Limpar qualquer timer anterior
+    if (this.messageTimer) {
+      clearTimeout(this.messageTimer);
+    }
+    
+    // Esconder após a duração
+    this.messageTimer = setTimeout(() => {
+      messageElement.style.opacity = '0';
+      messageElement.style.transform = 'translateX(-50%) translateY(-20px)';
+      
+      // Remover do DOM após a transição
+      setTimeout(() => {
+        if (messageElement && messageElement.parentNode) {
+          messageElement.parentNode.removeChild(messageElement);
+        }
+      }, 300);
+    }, duration);
+  }
+  
+  /**
+   * Mostra um número de dano flutuante sobre uma entidade
+   * @param {Object} entity - Entidade que recebeu o dano
+   * @param {number} amount - Quantidade de dano
+   * @param {string} type - Tipo de dano (physical, magical, etc.)
+   * @param {Object} options - Opções adicionais
+   */
+  showDamageNumber(entity, amount, type = 'physical', options = {}) {
+    if (!entity || !entity.model) return;
+    
+    // Determinar cor baseada no tipo de dano
+    let color = '#ffffff'; // branco (padrão)
+    
+    if (type === 'physical') {
+      color = '#ff4444'; // vermelho
+    } else if (type === 'magical') {
+      color = '#44aaff'; // azul
+    } else if (type === 'fire') {
+      color = '#ff6600'; // laranja
+    } else if (type === 'ice') {
+      color = '#66ccff'; // azul claro
+    } else if (type === 'poison') {
+      color = '#66ff66'; // verde
+    } else if (type === 'heal') {
+      color = '#66ff66'; // verde
+      amount = '+' + amount; // adicionar + para cura
+    }
+    
+    // Ajustar tamanho e cor para críticos
+    const fontSize = options.critical ? '24px' : '18px';
+    const fontWeight = options.critical ? 'bold' : 'normal';
+    
+    // Criar elemento HTML para o número de dano
+    const damageElement = document.createElement('div');
+    damageElement.textContent = amount;
+    damageElement.style.position = 'absolute';
+    damageElement.style.color = color;
+    damageElement.style.fontFamily = 'Arial, sans-serif';
+    damageElement.style.fontSize = fontSize;
+    damageElement.style.fontWeight = fontWeight;
+    damageElement.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)';
+    damageElement.style.pointerEvents = 'none';
+    damageElement.style.zIndex = '1000';
+    
+    // Adicionar ao DOM
+    document.body.appendChild(damageElement);
+    
+    // Posicionar elemento sobre a entidade
+    const updatePosition = () => {
+      if (!entity.model) {
+        // Entidade não existe mais, remover elemento
+        if (damageElement.parentNode) {
+          damageElement.parentNode.removeChild(damageElement);
+        }
+        return;
+      }
+      
+      // Obter posição da entidade no espaço 3D
+      const entityPosition = new THREE.Vector3();
+      entity.model.getWorldPosition(entityPosition);
+      
+      // Converter para coordenadas de tela
+      const canvas = document.querySelector('canvas');
+      if (!canvas) return;
+      
+      const canvasRect = canvas.getBoundingClientRect();
+      const vector = entityPosition.clone();
+      
+      // Ajustar Y para mostrar acima da entidade
+      vector.y += 1.5;
+      
+      // Ajustar Z se necessário (quanto menor, mais longe)
+      
+      // Converter para coordenadas NDC (-1 a +1)
+      vector.project(window.game.renderer.camera);
+      
+      // Converter para coordenadas de tela
+      const x = (vector.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
+      const y = -(vector.y * 0.5 - 0.5) * canvasRect.height + canvasRect.top;
+      
+      // Aplicar posição
+      damageElement.style.left = `${x}px`;
+      damageElement.style.top = `${y}px`;
+      damageElement.style.transform = 'translate(-50%, -50%)';
+    };
+    
+    // Posicionar inicialmente
+    updatePosition();
+    
+    // Animar o número de dano
+    let elapsed = 0;
+    const duration = 1000; // 1 segundo
+    const startTime = Date.now();
+    const initialY = parseFloat(damageElement.style.top);
+    
+    // Função de animação
+    const animate = () => {
+      elapsed = Date.now() - startTime;
+      
+      if (elapsed < duration) {
+        // Atualizar posição
+        updatePosition();
+        
+        // Animar movimento para cima com fade out
+        const progress = elapsed / duration;
+        const offsetY = -50 * progress; // move para cima
+        damageElement.style.opacity = 1 - progress; // fade out
+        damageElement.style.transform = `translate(-50%, calc(-50% + ${offsetY}px))`;
+        
+        requestAnimationFrame(animate);
+      } else {
+        // Remover elemento no fim da animação
+        if (damageElement.parentNode) {
+          damageElement.parentNode.removeChild(damageElement);
+        }
+      }
+    };
+    
+    // Iniciar animação
+    requestAnimationFrame(animate);
   }
 } 

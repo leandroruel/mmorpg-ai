@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createTextTexture, calculateRotationAngle, isWithinDistance } from '../utils/helpers';
+import { createTextTexture, calculateRotationAngle } from '../utils/helpers';
 
 /**
  * Classe base para entidades do jogo (jogadores e monstros)
@@ -15,6 +15,7 @@ export class Entity {
     this.movementDirection = new THREE.Vector3();
     this.targetPosition = new THREE.Vector3();
     this.movementCallback = null;
+    this.ignoreLimits = false;
   }
   
   /**
@@ -94,12 +95,16 @@ export class Entity {
    * Move a entidade para uma posição específica
    * @param {THREE.Vector3} targetPosition - Posição de destino
    * @param {Function} callback - Função a ser chamada ao chegar ao destino
+   * @param {boolean} ignoreLimits - Se deve ignorar os limites do mapa (para perseguição)
    */
-  moveToPosition(targetPosition, callback = null) {
+  moveToPosition(targetPosition, callback = null, ignoreLimits = false) {
     if (!this.model) return;
     
     // Definir alvo
     this.targetPosition.copy(targetPosition);
+    
+    // Configurar flag para ignorar limites do mapa
+    this.ignoreLimits = ignoreLimits;
     
     // Calcular direção
     this.movementDirection.subVectors(this.targetPosition, this.model.position).normalize();
@@ -115,14 +120,27 @@ export class Entity {
   stopMovement() {
     this.isMoving = false;
     this.movementDirection.set(0, 0, 0);
-    this.movementCallback = null;
+    this.ignoreLimits = false;
+    
+    // Se tem callback, chamar antes de limpar
+    if (this.movementCallback) {
+      const callback = this.movementCallback;
+      this.movementCallback = null;
+      
+      // Executar callback em uma nova pilha para evitar bugs
+      setTimeout(() => {
+        callback();
+      }, 0);
+    } else {
+      this.movementCallback = null;
+    }
   }
   
   /**
    * Atualiza o movimento da entidade
    * @param {number} moveSpeed - Velocidade de movimento
-   * @param {number} threshold - Distância para considerar chegada ao destino
-   * @returns {boolean} Verdadeiro se chegou ao destino
+   * @param {number} threshold - Limiar de distância para considerar chegada ao destino
+   * @returns {boolean} Indica se a entidade chegou ao destino
    */
   updateMovement(moveSpeed, threshold = 0.1) {
     if (!this.isMoving || !this.model) return false;
@@ -133,6 +151,7 @@ export class Entity {
     // Verificar se chegou ao destino
     if (distanceToTarget < threshold) {
       this.isMoving = false;
+      this.ignoreLimits = false; // Resetar flag ao chegar ao destino
       
       // Executar callback se existir
       if (this.movementCallback) {
@@ -151,6 +170,32 @@ export class Entity {
     // Limitar para não ultrapassar o destino
     if (moveVector.length() > distanceToTarget) {
       moveVector.copy(this.movementDirection).multiplyScalar(distanceToTarget);
+    }
+    
+    // Posição temporária para verificação de limites
+    const newPosition = this.model.position.clone().add(moveVector);
+    
+    // Verificar limites do mapa (assumindo um mapa quadrado de -50 a 50)
+    const mapLimit = 50;
+    let movementBlocked = false;
+    
+    // Só verificar limites se a flag ignoreLimits não estiver ativada
+    if (!this.ignoreLimits) {
+      if (newPosition.x < -mapLimit || newPosition.x > mapLimit) {
+        moveVector.x = 0; // Bloquear movimento em X
+        movementBlocked = true;
+      }
+      
+      if (newPosition.z < -mapLimit || newPosition.z > mapLimit) {
+        moveVector.z = 0; // Bloquear movimento em Z
+        movementBlocked = true;
+      }
+      
+      // Se o movimento foi bloqueado completamente, parar
+      if (movementBlocked && (moveVector.x === 0 && moveVector.z === 0)) {
+        this.stopMovement();
+        return false;
+      }
     }
     
     // Atualizar posição

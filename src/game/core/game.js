@@ -4,6 +4,7 @@ import { ResourceLoader } from './loader';
 import { GameRenderer } from '../rendering/renderer';
 import { EntityManager } from '../entities/entityManager';
 import { InputManager } from '../controls/inputManager';
+import { initCombatSystem } from '../combat'; // Importar o sistema de combate
 
 /**
  * Classe principal do jogo MMORPG
@@ -20,6 +21,9 @@ export class MMORPGGame {
     this.ui = new UserInterface();
     this.networkManager = new NetworkManager();
     this.renderer = new GameRenderer();
+    
+    // Handlers de atualização
+    this.updateHandlers = new Map();
     
     // Inicializar componentes
     this.initialize();
@@ -103,11 +107,11 @@ export class MMORPGGame {
   setupNetworkEvents() {
     // Evento para receber o estado inicial do jogo
     this.networkManager.on('gameState', (data) => {
-      console.log('Estado do jogo recebido:', data);
+      console.log('[Game] Estado do jogo recebido:', data);
       
       // Verificar se os dados são válidos
       if (!data || !data.selfId) {
-        console.error('Dados do gameState inválidos:', data);
+        console.error('[Game] Dados do gameState inválidos:', data);
         return;
       }
       
@@ -125,31 +129,12 @@ export class MMORPGGame {
           this.entityManager.createOrUpdateMonster(id, monsterData);
         });
         
-        // Atualizar HUD com informações do jogador
-        const localPlayer = this.entityManager.getLocalPlayer();
-        if (localPlayer) {
-          const playerClass = localPlayer.data.class || 'knight';
-          const className = playerClass.charAt(0).toUpperCase() + playerClass.slice(1);
-          this.ui.updatePlayerInfo(localPlayer.data, className);
-          console.log('Jogador local inicializado com sucesso:', localPlayer);
-        } else {
-          console.error('Jogador local não encontrado após gameState');
-        }
+        // Iniciar o jogo após receber o estado
+        this.startGame(data.players[data.selfId]);
         
-        // Inicializar controles de input
-        this.initializeControls();
       } catch (error) {
-        console.error('Erro ao processar gameState:', error);
+        console.error('[Game] Erro ao processar o estado do jogo:', error);
       }
-      
-      // Criar solo
-      this.renderer.createGround();
-      
-      // Iniciar animação
-      this.renderer.startAnimationLoop();
-      
-      // Ocultar tela de carregamento
-      this.ui.updateLoadingProgress(1.0);
     });
     
     // Evento para quando um jogador entrar
@@ -171,10 +156,72 @@ export class MMORPGGame {
       });
     });
     
-    // Evento para quando um monstro recebe dano
+    // Evento para quando um monstro é danificado
     this.networkManager.on('monsterDamaged', (data) => {
-      console.log(`Monstro ${data.id} sofreu ${data.damage} de dano. HP: ${data.hp}`);
-      this.entityManager.damageMonster(data.id, data.damage);
+      console.log(`[Game] Evento monsterDamaged recebido: Monstro ${data.id} recebeu ${data.damage} de dano de ${data.attackerId}. HP restante: ${data.hp}`);
+      
+      // Atualizar HP do monstro
+      const monster = this.entityManager.monsters.get(data.id);
+      if (!monster) {
+        console.log(`[Game] Erro: Monstro ${data.id} não encontrado no evento monsterDamaged`);
+        return;
+      }
+      
+      // Interromper qualquer movimento imediatamente
+      if (monster.isMoving) {
+        console.log(`[Game] Interrompendo movimento do monstro ${data.id}`);
+        monster.stopMovement();
+      }
+      
+      // Verificar se este evento já foi processado localmente
+      const processLocally = monster.hp !== data.hp;
+      
+      if (processLocally) {
+        console.log(`[Game] Processando evento monsterDamaged do servidor. HP local: ${monster.hp}, HP servidor: ${data.hp}`);
+        
+        // Sincronizar HP com o servidor
+        monster.hp = data.hp;
+        monster.data.hp = data.hp;
+        
+        // Se estamos usando o sistema de combate
+        if (monster.combatStats) {
+          monster.combatStats.hp = data.hp;
+          monster.isDead = monster.combatStats.isDead = (data.hp <= 0);
+        } else {
+          monster.isDead = (data.hp <= 0);
+        }
+        
+        // Atualizar nome com novo HP
+        monster.updateNameDisplay();
+        
+        // Efeito visual de dano (no caso de não ter sido processado localmente)
+        monster.showDamageEffect(data.damage);
+      }
+      
+      // Sempre aplicar a lógica de agressividade, mesmo se já foi processado localmente
+      // para garantir que o monstro fique agressivo
+      if (data.attackerId && monster.ai) {
+        console.log(`[Game] Forçando agressividade do monstro ${data.id} contra ${data.attackerId}`);
+        
+        // Definir jogador como alvo
+        monster.ai.setAggroTarget(data.attackerId);
+        
+        // Forçar mudança de estado para agressivo e perseguição imediata
+        monster.ai.setState('aggro');
+        
+        // Atualizar IA imediatamente (não esperar o próximo frame)
+        setTimeout(() => {
+          if (monster.ai && !monster.isDead) {
+            monster.ai.pursueTarget();
+          }
+        }, 100);
+      }
+      
+      // Verificar se o monstro morreu
+      if (data.hp <= 0 && !monster.isDead) {
+        console.log(`[Game] Monstro ${data.id} morreu pelo evento do servidor`);
+        monster.die();
+      }
     });
     
     // Evento para quando um monstro morre
@@ -216,6 +263,141 @@ export class MMORPGGame {
       
       // Executar a lógica original
       this.entityManager.respawnMonster(monsterData.id, monsterData);
+    });
+    
+    // Evento para quando um monstro se move
+    this.networkManager.on('monsterMoved', (data) => {
+      console.log(`Monstro ${data.id} moveu para`, data.position);
+      const monster = this.entityManager.monsters.get(data.id);
+      if (monster) {
+        monster.updatePosition(data.position);
+      }
+    });
+    
+    // Evento para quando um monstro ataca um jogador
+    this.networkManager.on('monsterAttack', (data) => {
+      console.log(`Monstro ${data.monsterId} atacou jogador ${data.targetId}`);
+      
+      // Buscar jogador e aplicar dano
+      const player = this.entityManager.players.get(data.targetId);
+      if (player) {
+        player.takeDamage(data.damage, data.monsterId);
+      }
+    });
+    
+    // Evento para quando um jogador morre
+    this.networkManager.on('playerDied', (data) => {
+      console.log(`Jogador ${data.playerId} morreu`);
+      
+      // Buscar jogador e processar morte
+      const player = this.entityManager.players.get(data.playerId);
+      if (player && !player.isDead) {
+        player.die();
+      }
+    });
+    
+    // Evento para quando um jogador respawna
+    this.networkManager.on('playerRespawn', (data) => {
+      console.log(`Jogador ${data.playerId} respawnou`);
+      
+      // Buscar jogador e processar respawn
+      const player = this.entityManager.players.get(data.playerId);
+      if (player && player.isDead) {
+        player.respawn();
+      }
+    });
+    
+    // Evento para quando um jogador ataca
+    this.networkManager.on('playerAttack', (data) => {
+      console.log(`Jogador ${data.attackerId} atacou ${data.targetId}`);
+      
+      // Verificar se o alvo é um monstro
+      if (data.targetId.startsWith('monster')) {
+        const monster = this.entityManager.monsters.get(data.targetId);
+        if (monster) {
+          // Calcular dano baseado no jogador e no tipo de monstro (pode ser melhorado)
+          const damage = Math.floor(Math.random() * 10) + 5;
+          
+          // Aplicar dano ao monstro, passando o ID do atacante
+          monster.takeDamage(damage, data.attackerId);
+        }
+      }
+    });
+    
+    // Evento para resultados de ataque
+    this.networkManager.on('attackResult', (data) => {
+      if (data.success) {
+        console.log(`Ataque bem-sucedido contra ${data.targetId} causando ${data.damage} de dano`);
+        
+        // Mostrar feedback visual se necessário
+        // Por exemplo, números de dano flutuantes
+      } else {
+        console.log(`Ataque falhou contra ${data.targetId}: ${data.error}`);
+      }
+    });
+    
+    // Evento para atualização de jogador
+    this.networkManager.on('playerUpdated', (data) => {
+      console.log(`[Game] Jogador ${data.id} atualizado:`, data);
+      
+      // Atualizar jogador
+      const player = this.entityManager.createOrUpdatePlayer(data.id, data);
+      
+      // Se for o jogador local, atualizar a UI
+      if (data.id === this.entityManager.localPlayerId) {
+        this.updatePlayerUI(player);
+      }
+    });
+    
+    // Evento para quando um jogador recebe dano
+    this.networkManager.on('playerDamaged', (data) => {
+      console.log(`[Game] Jogador ${data.id} recebeu ${data.damage} de dano de ${data.attackerId}`);
+      
+      // Verificar se é o jogador local
+      const isLocalPlayer = this.entityManager.localPlayerId === data.id;
+      
+      // Buscar o jogador e atualizar HP (sem recalcular o dano)
+      const player = this.entityManager.players.get(data.id);
+      if (!player) {
+        console.error(`[Game] Jogador ${data.id} não encontrado para processar dano`);
+        return;
+      }
+      
+      // Verificar se é o jogador local ou não
+      if (isLocalPlayer) {
+        // Para o jogador local, atualizamos as estatísticas diretamente
+        // sem chamar takeDamage novamente (evita duplicação)
+        
+        // Atualizar HP do jogador
+        if (player.combatStats) {
+          player.combatStats.hp = Math.max(0, Number(data.hp) || 0);
+          player.hp = player.combatStats.hp;
+        } else {
+          player.hp = Math.max(0, Number(data.hp) || 0);
+        }
+        
+        // Atualizar dados
+        if (player.data) {
+          player.data.hp = player.hp;
+        }
+        
+        // Verificar se o jogador morreu
+        if (player.hp <= 0 && !player.isDead) {
+          player.isDead = true;
+          if (typeof player.die === 'function') player.die();
+        }
+        
+        // Mostrar efeito visual de dano
+        player.showDamageEffect(data.damage);
+        
+        // Atualizar UI
+        this.updatePlayerUI(player);
+      } else {
+        // Para outros jogadores, podemos chamar takeDamage
+        if (player.takeDamage) {
+          player.takeDamage(data.damage, data.attackerId);
+        }
+      }
     });
   }
   
@@ -282,6 +464,149 @@ export class MMORPGGame {
   }
   
   /**
+   * Inicializa o jogo após o login
+   * @param {Object} playerData - Dados do jogador
+   */
+  startGame(playerData) {
+    try {
+      console.log('[Game] Iniciando jogo com playerData:', playerData);
+      
+      // Verificar se já temos o jogador local
+      let localPlayer = this.entityManager.getLocalPlayer();
+      
+      // Se não tiver, criar o jogador local
+      if (!localPlayer) {
+        localPlayer = this.entityManager.createLocalPlayer(playerData);
+      }
+      
+      if (!localPlayer) {
+        console.error('[Game] Erro ao iniciar jogo: jogador local não encontrado');
+        return;
+      }
+      
+      // Criar o terreno
+      console.log('[Game] Criando terreno...');
+      this.renderer.createGround();
+      
+      // Inicializar controles
+      this.initializeControls();
+      
+      // Inicializar sistema de combate
+      try {
+        this.combatSystem = initCombatSystem(this);
+        console.log('[Game] Sistema de combate inicializado');
+      } catch (error) {
+        console.error('[Game] Erro ao inicializar sistema de combate:', error);
+        // Criar um sistema de combate vazio para evitar erros
+        this.combatSystem = {
+          setupEntity: () => {},
+          processAttack: () => ({ success: false, message: 'Sistema de combate não disponível' }),
+          update: () => {},
+          onAttack: () => {},
+          onDamage: () => {},
+          onDeath: () => {},
+          onHeal: () => {}
+        };
+      }
+      
+      // Registrar sistema de combate no gerenciador de entidades
+      if (this.entityManager) {
+        this.entityManager.setCombatSystem(this.combatSystem);
+      }
+      
+      // Adicionar referência do entityManager a todos os monstros existentes
+      for (const [monsterId, monster] of this.entityManager.monsters.entries()) {
+        if (monster && monster.ai) {
+          monster.ai.entityManager = this.entityManager;
+          console.log(`[Game] EntityManager configurado para monstro ${monsterId}`);
+        }
+      }
+      
+      // Iniciar loop de renderização
+      this.renderer.startAnimationLoop((deltaTime) => {
+        // Executar atualizadores registrados
+        for (const [name, handler] of this.updateHandlers.entries()) {
+          try {
+            handler(deltaTime);
+          } catch (error) {
+            console.error(`Erro no handler de atualização "${name}":`, error);
+          }
+        }
+      });
+      
+      // Tentar configurar handlers específicos de combate
+      try {
+        this._setupCombatHandlers();
+      } catch (error) {
+        console.error('[Game] Erro ao configurar handlers de combate:', error);
+      }
+      
+      // Mostrar interface de jogo
+      this.ui.showGameUI();
+      
+      // Atualizar UI com dados do jogador
+      this.updatePlayerUI(localPlayer);
+      
+      // Ocultar tela de carregamento
+      this.ui.hideLoading();
+      
+      // Registrar o jogo como globalmente acessível para depuração
+      window.game = this;
+      
+      console.timeEnd('inicialização');
+      console.log('[Game] Jogo iniciado!');
+    } catch (error) {
+      console.error('[Game] Erro ao iniciar jogo:', error);
+      this.ui.showErrorMessage('Erro ao iniciar o jogo. Por favor, recarregue a página.');
+    }
+  }
+  
+  /**
+   * Atualiza a UI com dados do jogador
+   * @param {Object} player - Jogador local
+   */
+  updatePlayerUI(player) {
+    if (!player) {
+      console.error('[Game] Não foi possível atualizar UI: jogador não fornecido');
+      return;
+    }
+    
+    // Extrair valores de HP e MP e garantir que sejam numéricos
+    let hp = player.combatStats ? player.combatStats.hp : player.hp;
+    let maxHp = player.combatStats ? player.combatStats.maxHp : player.maxHp;
+    let mp = player.combatStats ? player.combatStats.mp : player.mp;
+    let maxMp = player.combatStats ? player.combatStats.maxMp : player.maxMp;
+    
+    // Garantir valores numéricos válidos
+    hp = Number(hp) || 0;
+    maxHp = Number(maxHp) || 100;
+    mp = Number(mp) || 0;
+    maxMp = Number(maxMp) || 50;
+    
+    // Garantir que o HP não seja maior que o maxHP
+    hp = Math.min(hp, maxHp);
+    mp = Math.min(mp, maxMp);
+    
+    // Dados para a UI
+    const playerUIData = {
+      name: player.name || player.id || 'Jogador',
+      hp: hp,
+      maxHp: maxHp,
+      mp: mp,
+      maxMp: maxMp
+    };
+    
+    // Log para debug
+    console.log(`[Game] Atualizando UI: HP=${hp}/${maxHp}, MP=${mp}/${maxMp}`);
+    
+    // Atualizar HUD
+    this.ui.updatePlayerInfo(playerUIData, player.data?.class || 'Guerreiro');
+    
+    // Programar próxima atualização periódica (a cada 1 segundo)
+    setTimeout(() => this.updatePlayerUI(player), 1000);
+  }
+  
+  /**
    * Limpa e finaliza o jogo
    */
   cleanup() {
@@ -311,5 +636,90 @@ export class MMORPGGame {
     }
     
     console.log('Jogo finalizado');
+  }
+  
+  /**
+   * Configura handlers específicos do sistema de combate
+   * @private
+   */
+  _setupCombatHandlers() {
+    if (!this.combatSystem) {
+      console.warn('[Game] Sistema de combate não disponível, não é possível configurar handlers');
+      return;
+    }
+    
+    // Ouvir eventos de dano
+    this.combatSystem.onDamage((entity, amount, type, attackerId, options) => {
+      console.log(`[CombatHandler] Entidade ${entity.id} recebeu ${amount} de dano do tipo ${type}`);
+      
+      // Atualizar interface com feedback visual
+      if (this.ui.showDamageNumber) {
+        this.ui.showDamageNumber(entity, amount, type, options);
+      }
+      
+      // Notificar servidor sobre o dano (se for atacante local)
+      if (attackerId === this.entityManager.localPlayerId) {
+        this.networkManager.emit('playerAttackResult', {
+          attackerId: attackerId,
+          targetId: entity.id,
+          damage: amount,
+          type: type,
+          critical: options && options.critical || false
+        });
+      }
+    });
+    
+    // Ouvir eventos de morte
+    this.combatSystem.onDeath((entity) => {
+      console.log(`[CombatHandler] Entidade ${entity.id} morreu`);
+      
+      // Atualizar interface com feedback visual
+      if (this.ui.showDeathEffect) {
+        this.ui.showDeathEffect(entity);
+      }
+      
+      // Processar recompensas se for monstro
+      if (entity.type === 'monster') {
+        // Calcular e distribuir recompensas
+        this._processMobKillRewards(entity);
+      }
+    });
+    
+    // Ouvir eventos de ataque
+    this.combatSystem.onAttack((attacker, target, details) => {
+      console.log(`[CombatHandler] ${attacker.id} atacou ${target.id} (dano: ${details.damage})`);
+      
+      // Efeitos visuais de ataque
+      if (this.renderer && this.renderer.showAttackEffect) {
+        this.renderer.showAttackEffect(attacker, target, details);
+      }
+    });
+    
+    console.log('[Game] Handlers de combate configurados com sucesso');
+  }
+  
+  /**
+   * Processa recompensas por eliminar um monstro
+   * @param {Object} monster - Monstro eliminado
+   * @private
+   */
+  _processMobKillRewards(monster) {
+    // Verificar quem deve receber recompensas (quem causou mais dano)
+    const killer = this.entityManager.getLocalPlayer(); // Simplificado para este exemplo
+    
+    if (killer) {
+      // Calcular experiência com base no nível do monstro
+      const monsterLevel = monster.combatStats ? monster.combatStats.level : 1;
+      const expReward = 10 * monsterLevel;
+      
+      // Distribuir recompensas (simplificado)
+      this.ui.showMessage(`Você ganhou ${expReward} pontos de experiência!`);
+      
+      // Notificar servidor
+      this.networkManager.emit('monsterKilled', {
+        monsterId: monster.id,
+        killerId: killer.id
+      });
+    }
   }
 } 

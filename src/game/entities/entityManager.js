@@ -13,6 +13,18 @@ export class EntityManager {
     this.players = new Map();
     this.monsters = new Map();
     this.localPlayerId = null;
+    
+    // Referência ao sistema de combate (será definido após inicialização)
+    this.combatSystem = null;
+  }
+  
+  /**
+   * Define a referência ao sistema de combate
+   * @param {Object} combatSystem - Sistema de combate
+   */
+  setCombatSystem(combatSystem) {
+    this.combatSystem = combatSystem;
+    console.log('[EntityManager] Sistema de combate registrado');
   }
   
   /**
@@ -69,6 +81,41 @@ export class EntityManager {
   }
   
   /**
+   * Cria um jogador local (o jogador do cliente)
+   * @param {Object} playerData - Dados do jogador
+   * @returns {Player} O jogador criado
+   */
+  createLocalPlayer(playerData) {
+    const playerId = playerData.id;
+    
+    // Verificar se já existe
+    if (this.players.has(playerId)) {
+      return this.players.get(playerId);
+    }
+    
+    // Criar o jogador
+    const player = this.createOrUpdatePlayer(playerId, playerData);
+    
+    // Definir como jogador local
+    this.setLocalPlayerId(playerId);
+    
+    // Registrá-lo no sistema de combate se disponível
+    if (this.combatSystem) {
+      this.combatSystem.setupEntity(player, {
+        level: playerData.level || 1,
+        stats: {
+          maxHp: playerData.maxHp || 100,
+          maxMp: playerData.maxMp || 50,
+          attack: playerData.attack || 10,
+          defense: playerData.defense || 5
+        }
+      });
+    }
+    
+    return player;
+  }
+  
+  /**
    * Cria ou atualiza um monstro
    * @param {string} monsterId - ID do monstro
    * @param {Object} monsterData - Dados do monstro
@@ -78,27 +125,47 @@ export class EntityManager {
     // Verificar se o monstro já existe
     if (this.monsters.has(monsterId)) {
       const monster = this.monsters.get(monsterId);
-      
-      // Atualizar posição se necessário
-      if (monsterData.position) {
-        monster.updatePosition(monsterData.position);
-      }
-      
-      // Atualizar HP se necessário
-      if (monsterData.hp !== undefined) {
-        monster.hp = monsterData.hp;
-        monster.data.hp = monsterData.hp;
-      }
-      
+      monster.updateData(monsterData);
       return monster;
     }
     
-    // Criar novo monstro
+    // Criar um novo monstro - usar a assinatura original do construtor
     const monster = new Monster(monsterId, monsterData, this.scene);
+    
+    // Explicitamente criar o modelo 3D do monstro
     monster.createMonsterModel();
     
     // Adicionar à coleção
     this.monsters.set(monsterId, monster);
+    
+    // Configurar acesso ao NetworkManager
+    monster.scene.networkManager = this.networkManager;
+    
+    // Ativar a IA com acesso ao EntityManager
+    if (monster.ai) {
+      monster.ai.activate(this);
+    }
+    
+    // Registrá-lo no sistema de combate se disponível
+    if (this.combatSystem) {
+      // Calcular atributos com base no tipo e nível do monstro
+      const level = monsterData.level || 1;
+      const typeConfig = monster.isAggressive 
+        ? { attack: monster.attackDamage * 1.2, defense: 5 * level } 
+        : { attack: monster.attackDamage, defense: 3 * level };
+      
+      this.combatSystem.setupEntity(monster, {
+        level: level,
+        stats: {
+          maxHp: monster.maxHp,
+          maxMp: 20 * level,
+          attack: typeConfig.attack,
+          defense: typeConfig.defense
+        }
+      });
+    }
+    
+    console.log(`[EntityManager] Monstro criado: ${monsterId}, tipo: ${monster.type}`);
     
     return monster;
   }
@@ -128,15 +195,45 @@ export class EntityManager {
   }
   
   /**
+   * Obtém uma entidade pelo ID (jogador ou monstro)
+   * @param {string} entityId - ID da entidade
+   * @returns {Object} A entidade se encontrada, null caso contrário
+   */
+  getEntityById(entityId) {
+    if (this.players.has(entityId)) {
+      return this.players.get(entityId);
+    }
+    
+    if (this.monsters.has(entityId)) {
+      return this.monsters.get(entityId);
+    }
+    
+    return null;
+  }
+  
+  /**
    * Aplica dano a um monstro
    * @param {string} monsterId - ID do monstro
    * @param {number} damage - Quantidade de dano
+   * @param {string} attackerId - ID do atacante
    * @returns {number} HP restante
    */
-  damageMonster(monsterId, damage) {
+  damageMonster(monsterId, damage, attackerId = null) {
     if (this.monsters.has(monsterId)) {
       const monster = this.monsters.get(monsterId);
-      return monster.takeDamage(damage);
+      
+      // Se temos o sistema de combate e atacante, tentar usar o sistema de combate
+      if (this.combatSystem && attackerId) {
+        const attacker = this.getEntityById(attackerId);
+        if (attacker && monster && monster.combatStats) {
+          console.log(`[EntityManager] Processando dano via sistema de combate: ${attackerId} → ${monsterId}`);
+          const result = this.combatSystem.processAttack(attacker, monster);
+          return monster.hp;
+        }
+      }
+      
+      // Fallback para o método direto
+      return monster.takeDamage(damage, attackerId);
     }
     return 0;
   }
@@ -171,14 +268,27 @@ export class EntityManager {
   }
   
   /**
-   * Ataca um monstro (para o jogador local)
-   * @param {string} monsterId - ID do monstro
+   * Ataca um monstro com o jogador local
+   * @param {string} monsterId - ID do monstro a ser atacado
+   * @returns {boolean} Se o ataque foi bem-sucedido
    */
   attackMonster(monsterId) {
-    if (!this.localPlayerId || !this.players.has(this.localPlayerId)) return;
+    // Verificar se o jogador local existe
+    const localPlayer = this.getLocalPlayer();
+    if (!localPlayer) {
+      console.warn('Não foi possível atacar: jogador local não encontrado');
+      return false;
+    }
     
-    const player = this.players.get(this.localPlayerId);
-    player.attackEntity(monsterId);
+    // Verificar se o monstro existe
+    const monster = this.monsters.get(monsterId);
+    if (!monster) {
+      console.warn(`Não foi possível atacar: monstro ${monsterId} não encontrado`);
+      return false;
+    }
+    
+    // Atacar o monstro - enviando o ID do jogador para o monstro ficar agressivo
+    return localPlayer.attackEntity(monsterId);
   }
   
   /**
@@ -245,5 +355,32 @@ export class EntityManager {
     this.monsters.clear();
     
     this.localPlayerId = null;
+  }
+  
+  /**
+   * Aplica dano a um jogador
+   * @param {string} playerId - ID do jogador
+   * @param {number} damage - Quantidade de dano
+   * @param {string} attackerId - ID do atacante
+   * @returns {number} HP restante
+   */
+  damagePlayer(playerId, damage, attackerId = null) {
+    if (this.players.has(playerId)) {
+      const player = this.players.get(playerId);
+      
+      // Se temos o sistema de combate e atacante, tentar usar o sistema de combate
+      if (this.combatSystem && attackerId) {
+        const attacker = this.getEntityById(attackerId);
+        if (attacker && player && player.combatStats) {
+          console.log(`[EntityManager] Processando dano via sistema de combate: ${attackerId} → ${playerId}`);
+          const result = this.combatSystem.processAttack(attacker, player);
+          return player.hp;
+        }
+      }
+      
+      // Fallback para o método direto
+      return player.takeDamage(damage, attackerId);
+    }
+    return 0;
   }
 } 

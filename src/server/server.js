@@ -76,14 +76,22 @@ io.on('connection', (socket) => {
   });
   
   // Quando um jogador ataca
-  socket.on('playerAttack', (targetId) => {
-    if (players[socket.id] && monsters[targetId]) {
+  socket.on('playerAttack', (data) => {
+    // Garantir que temos os dados no formato correto
+    const targetId = typeof data === 'object' ? data.targetId : data;
+    const attackerId = typeof data === 'object' ? data.attackerId : socket.id;
+    
+    console.log(`[SERVIDOR] Jogador ${attackerId} atacou monstro ${targetId}`);
+    
+    if (monsters[targetId]) {
       // Lógica simples de dano
-      const damage = Math.floor(Math.random() * 10) + 1;
+      const damage = Math.floor(Math.random() * 10) + 5;
       monsters[targetId].hp -= damage;
       
       // Verificar se o monstro morreu
       if (monsters[targetId].hp <= 0) {
+        console.log(`[SERVIDOR] Monstro ${targetId} morreu`);
+        monsters[targetId].hp = 0; // Garantir que não fique negativo
         io.emit('monsterDied', targetId);
         
         // Respawn do monstro após 5 segundos
@@ -92,13 +100,30 @@ io.on('connection', (socket) => {
           io.emit('monsterRespawn', monsters[targetId]);
         }, 5000);
       } else {
-        // Atualizar estado do monstro para todos os jogadores
+        // Enviar evento para todos os clientes imediatamente
+        console.log(`[SERVIDOR] Emitindo monsterDamaged: ${targetId}, HP=${monsters[targetId].hp}, damage=${damage}, attackerId=${attackerId}`);
         io.emit('monsterDamaged', {
           id: targetId,
           hp: monsters[targetId].hp,
-          damage
+          damage,
+          attackerId
         });
       }
+      
+      // Responder ao jogador que o ataque foi bem sucedido
+      socket.emit('attackResult', {
+        success: true,
+        targetId,
+        damage
+      });
+    } else {
+      // Monstro não encontrado
+      console.log(`[SERVIDOR] Monstro ${targetId} não encontrado para ataque`);
+      socket.emit('attackResult', {
+        success: false,
+        targetId,
+        error: 'Monster not found'
+      });
     }
   });
   
