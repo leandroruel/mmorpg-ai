@@ -88,4 +88,65 @@ export const isWithinDistance = (point1, point2, threshold) => {
 export const calculateApproachPosition = (origin, target, offset = 1.0) => {
   const direction = new THREE.Vector3().subVectors(target, origin).normalize();
   return target.clone().sub(direction.multiplyScalar(offset));
+};
+
+/**
+ * Sistema de logs de debug
+ * @param {string} type - Tipo de log (combat, movement, network, etc)
+ * @param {string} message - Mensagem de debug
+ * @param {any} data - Dados adicionais opcionais
+ */
+export const debug = (type, message, data = null) => {
+  // Verificar se o debug está habilitado globalmente
+  if (!window.game || !window.game.DEBUG_CONFIG || !window.game.DEBUG_CONFIG.enabled) {
+    return;
+  }
+  
+  // Verificar se o tipo específico de debug está habilitado
+  const typeConfig = `log${type.charAt(0).toUpperCase() + type.slice(1)}`;
+  if (window.game.DEBUG_CONFIG[typeConfig] === false) {
+    return;
+  }
+  
+  // Criar prefixo colorido com base no tipo
+  let prefix = '';
+  switch (type.toLowerCase()) {
+    case 'combat':
+      prefix = '%c[Combat]';
+      console.log(prefix + ' ' + message, 'color: red; font-weight: bold;', data || '');
+      break;
+    case 'movement':
+      prefix = '%c[Movement]';
+      console.log(prefix + ' ' + message, 'color: blue; font-weight: bold;', data || '');
+      break;
+    case 'network':
+      prefix = '%c[Network]';
+      console.log(prefix + ' ' + message, 'color: purple; font-weight: bold;', data || '');
+      break;
+    case 'ai':
+      prefix = '%c[AI]';
+      console.log(prefix + ' ' + message, 'color: orange; font-weight: bold;', data || '');
+      break;
+    default:
+      prefix = '%c[Debug]';
+      console.log(prefix + ' ' + message, 'color: green; font-weight: bold;', data || '');
+  }
+};
+
+/**
+ * Ativa/desativa uma configuração de debug
+ * @param {string} option - Opção a ser alterada
+ * @param {boolean} value - Novo valor
+ */
+export const toggleDebug = (option, value) => {
+  if (!window.game || !window.game.DEBUG_CONFIG) return;
+  
+  if (option === 'all') {
+    window.game.DEBUG_CONFIG.enabled = value;
+    return;
+  }
+  
+  if (window.game.DEBUG_CONFIG.hasOwnProperty(option)) {
+    window.game.DEBUG_CONFIG[option] = value;
+  }
 }; 

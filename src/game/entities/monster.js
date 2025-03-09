@@ -3,6 +3,7 @@ import { Entity } from './entity';
 import { createTextTexture } from '../utils/helpers';
 import { MonsterAI } from './monsterAI';
 import { MONSTER_AI_CONFIG, COMBAT_CONFIG } from '../core/config';
+import { debug } from '../utils/helpers';
 
 /**
  * Classe que representa um monstro no jogo
@@ -18,7 +19,7 @@ export class Monster extends Entity {
     this.hp = data.hp || 20;
     this.maxHp = data.maxHp || 20;
     this.attackDamage = data.attackDamage || 5;
-    this.attackRange = data.attackRange || 1.5;
+    this.attackRange = data.attackRange || 1;
     this.aggroRange = data.aggroRange || 5.0;
     this.moveSpeed = data.moveSpeed || 0.05;
     this.isDead = false;
@@ -90,17 +91,71 @@ export class Monster extends Entity {
   
   /**
    * Cria o modelo 3D do monstro
+   * @returns {THREE.Object3D} O modelo criado
    */
   createMonsterModel() {
-    // Criar geometria e material
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshLambertMaterial({ color: this.color });
+    // Se não temos a cena, não podemos criar o modelo
+    if (!this.scene) return null;
     
-    // Criar modelo usando o método da classe pai
-    this.createModel(geometry, material);
+    // Verificar se o tipo é "poring" para criar um cubo temporário
+    if (this.type === 'poring') {
+      console.log("[Monster] Criando cubo temporário para o poring");
+      
+      // Criar um cubo rosa como substituto temporário para o poring
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const material = new THREE.MeshLambertMaterial({ color: 0xFF9999 });  // Rosa claro
+      this.model = new THREE.Mesh(geometry, material);
+      
+      // Adicionar à cena
+      this.scene.add(this.model);
+      
+      // Configurar posição
+      if (this.data.position) {
+        this.model.position.set(
+          this.data.position.x || 0,
+          0.5, // Metade da altura do cubo
+          this.data.position.z || 0
+        );
+      }
+      
+      return this.model;
+    }
     
-    // Adicionar atributo para facilitar a seleção
+    // Para outros tipos, continuar com o modelo padrão (esfera)
+    // Geometria do monstro (uma esfera para representar o monstro)
+    const monsterGeometry = new THREE.SphereGeometry(0.5, 32, 16);
+    
+    // Definir cor com base no tipo
+    let monsterColor = 0xff0000; // Vermelho padrão
+    
+    switch (this.type) {
+      case 'poring':
+        monsterColor = 0xff88cc; // Rosa
+        break;
+      case 'zombie':
+        monsterColor = 0x448855; // Verde escuro
+        break;
+      case 'wolf':
+        monsterColor = 0x777777; // Cinza
+        break;
+      default:
+        monsterColor = 0xff0000; // Vermelho padrão
+    }
+    
+    // Material do monstro
+    const monsterMaterial = new THREE.MeshStandardMaterial({ color: monsterColor });
+    
+    // Criar o modelo
+    this.model = this.createModel(monsterGeometry, monsterMaterial);
+    
+    // CORREÇÃO: Garantir que o modelo esteja corretamente posicionado acima do chão
     if (this.model) {
+      // Garantir que a altura Y seja pelo menos o raio da esfera (0.5)
+      if (this.model.position.y < 0.5) {
+        this.model.position.y = 0.5;
+      }
+      
+      // Adicionar dados ao modelo para facilitar identificação
       this.model.userData.entityId = this.id;
       this.model.userData.entityType = 'monster';
       this.model.userData.monsterType = this.type;
@@ -117,37 +172,53 @@ export class Monster extends Entity {
       this.lastPosition = { ...this.position };
     }
     
+    // Aplicar posição inicial se disponível
+    if (this.data.position) {
+      this.model.position.set(
+        this.data.position.x || 0,
+        0.5, // CORREÇÃO: Altura fixa para todos os monstros
+        this.data.position.z || 0
+      );
+    } else {
+      // Posição padrão
+      this.model.position.set(0, 0.5, 0);
+    }
+    
     return this.model;
   }
   
   /**
-   * Ataca um jogador
-   * @param {Player} player - Jogador alvo do ataque
-   * @returns {boolean} - Se o ataque foi bem-sucedido
-   */
-  attackPlayer(player) {
-    if (!player || this.isDead) return false;
-    
-    // Enviar evento de ataque para o servidor
-    if (this.scene.networkManager) {
-      this.scene.networkManager.emit('monsterAttack', {
-        monsterId: this.id,
-        targetId: player.id,
-        damage: this.attackDamage
-      });
-    }
-    
-    console.log(`Monstro ${this.id} atacou o jogador ${player.id} causando ${this.attackDamage} de dano`);
-    return true;
-  }
-  
-  /**
-   * Atualiza o status do monstro
+   * Atualiza o monstro a cada frame
    */
   update() {
+    // Pular se estiver morto ou sem modelo
+    if (this.isDead || !this.model) return;
+    
     // Atualizar movimento se estiver se movendo
     if (this.isMoving) {
       this.updateMovement(this.moveSpeed);
+    }
+    
+    // Animação especial para o poring
+    if (this.type === 'poring') {
+      try {
+        // Adicionar pulo suave para o modelo do poring
+        const time = Date.now() * 0.001; // Tempo em segundos
+        const bounceHeight = 0.1; // Altura do pulo
+        const bounceSpeed = 1.5; // Velocidade do pulo
+        
+        // Verificar a estrutura do modelo e aplicar a animação apropriadamente
+        // No caso do cubo simples, aplicar diretamente ao modelo principal
+        this.model.position.y = 0.5 + Math.sin(time * bounceSpeed) * bounceHeight;
+        
+        // Adicionar rotação quando estiver se movendo
+        if (this.isMoving) {
+          // Rotacionar o modelo na direção do movimento
+          this.model.rotation.y += 0.05;
+        }
+      } catch (error) {
+        console.warn(`[Monster] Erro ao animar poring: ${error.message}`);
+      }
     }
     
     // Atualizar a posição para o sistema de combate
@@ -160,100 +231,188 @@ export class Monster extends Entity {
   }
   
   /**
-   * Aplica dano ao monstro
-   * @param {number} damage - Quantidade de dano
+   * Ataca um jogador
+   * @param {Player} player - Jogador alvo do ataque
+   * @returns {boolean} Indica se o ataque foi bem-sucedido
+   */
+  attackPlayer(player) {
+    try {
+      // Verificar se o jogador é válido
+      if (!player || !player.model || player.isDead) {
+        console.log(`[Monster] Jogador inválido, não pode atacar`);
+        return false;
+      }
+      
+      // Verificar cooldown de ataque
+      const now = Date.now();
+      if (this.lastAttackTime && now - this.lastAttackTime < this.attackInterval) {
+        // Ainda em cooldown
+        return false;
+      }
+      
+      this.lastAttackTime = now;
+      
+      // Calcular distância
+      const distance = this.model.position.distanceTo(player.model.position);
+      if (distance > this.attackRange * 1.2) {
+        console.log(`[Monster] Jogador fora de alcance: ${distance.toFixed(1)} > ${this.attackRange}`);
+        return false;
+      }
+      
+      console.log(`[Monster] 🔥 ${this.id} atacando jogador ${player.id}`);
+      
+      // Calcular dano com variação aleatória
+      const damageVariation = 0.2; // 20% de variação para mais ou para menos
+      const randomFactor = 1 - damageVariation + Math.random() * damageVariation * 2;
+      const baseDamage = this.attackDamage || 3;
+      const finalDamage = Math.max(1, Math.floor(baseDamage * randomFactor));
+      
+      // Calcular dano final (aplicando defesa do jogador)
+      const playerDefenseMultiplier = player.defenseMultiplier || 0;
+      const finalDamageAfterDefense = Math.max(1, Math.floor(finalDamage * (1 - playerDefenseMultiplier)));
+      
+      // Notificar o jogador do ataque (REMOVIDO ALERT PARA NÃO INTERROMPER O JOGO)
+      console.log(`[Monster] ⚔️ ${this.id} causando ${finalDamageAfterDefense} de dano em ${player.id}`);
+      
+      // Emitir evento de rede para sincronizar com servidor
+      if (this.networkManager) {
+        this.networkManager.emit('monsterAttack', {
+          monsterId: this.id,
+          targetId: player.id,
+          damage: finalDamageAfterDefense
+        });
+      }
+      
+      // CRUCIAL: Aplicar dano diretamente ao jogador
+      if (player.takeDamage && typeof player.takeDamage === 'function') {
+        player.takeDamage(finalDamageAfterDefense, this.id);
+        
+        // Mostrar efeito visual
+        if (player.showDamageEffect && typeof player.showDamageEffect === 'function') {
+          player.showDamageEffect(finalDamageAfterDefense);
+        }
+        
+        // Mostrar mensagem na tela (sem alert)
+        if (player.id === window.game?.entityManager?.localPlayerId) {
+          console.log(`🔥 Você recebeu ${finalDamageAfterDefense} de dano de ${this.type}!`);
+          
+          // Opcional: mostrar um efeito visual não bloqueante
+          if (window.game && window.game.ui) {
+            window.game.ui.showMessage(`Recebeu ${finalDamageAfterDefense} de dano de ${this.type}!`, 2000, 'damage');
+          }
+        }
+      }
+      
+      // Criar efeito visual
+      if (this.scene && this.scene.renderer) {
+        this.scene.renderer.createAttackEffect(
+          this.model.position.clone(),
+          player.model.position.clone(),
+          0xffaa00, // Laranja para ataques de monstro
+          300
+        );
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`[Monster] Erro ao atacar jogador:`, error);
+      return false;
+    }
+  }
+  
+  /**
+   * Recebe dano
+   * @param {number} damage - Quantidade de dano recebido
    * @param {string} attackerId - ID do jogador que causou o dano
    * @returns {number} HP restante
    */
   takeDamage(damage, attackerId) {
-    console.log(`[Monster.takeDamage] Monstro ${this.id} recebeu ${damage} de dano de ${attackerId}`);
-    
-    // Interromper qualquer movimento atual IMEDIATAMENTE
-    if (this.isMoving) {
-      console.log(`[Monster.takeDamage] Interrompendo movimento do monstro ${this.id}`);
-      this.stopMovement();
-    }
-    
-    // Verificar se estamos usando o sistema de combate
-    if (this.combatStats) {
-      console.log(`[Monster.takeDamage] Monstro ${this.id} utilizando sistema de combate para processar dano de ${attackerId}`);
+    try {
+      // Garantir que o dano seja numérico
+      damage = Number(damage) || 0;
       
-      // Se não está morto e tem um atacante, ficar agressivo contra ele
-      if (!this.isDead && attackerId && this.ai) {
-        console.log(`[Monster.takeDamage] Monstro ${this.id} ficará agressivo contra ${attackerId}`);
-        
-        // Definir alvo e iniciar comportamento agressivo
-        this.ai.setAggroTarget(attackerId);
-        
-        // Forçar mudança de estado para agressivo
-        if (this.ai.state !== 'aggro' && this.ai.state !== 'attack') {
-          this.ai.setState('aggro');
-          
-          // Forçar perseguição imediata - NÃO USAR TIMEOUT, é muito lento!
-          if (this.ai && !this.isDead) {
-            console.log(`[Monster.takeDamage] Iniciando perseguição imediata contra ${attackerId}`);
-            this.ai.pursueTarget();
-          }
-        }
+      // Garantir que seja pelo menos 1 ponto de dano
+      damage = Math.max(1, damage);
+      
+      debug('combat', `Monstro ${this.id} recebendo ${damage} de dano de ${attackerId}`);
+      
+      // Se já estiver morto, não fazer nada
+      if (this.isDead) {
+        debug('combat', `Monstro ${this.id} já está morto`);
+        return 0;
       }
       
-      // Aplicar dano através do sistema de combate
-      const damageResult = this.combatStats.applyDamage(damage, 'physical', attackerId);
+      // Parar qualquer movimento atual
+      if (typeof this.stopMovement === 'function') {
+        this.stopMovement();
+      }
       
-      // Sincronizar dados internos com o sistema de combate
-      this.hp = this.combatStats.hp;
-      this.data.hp = this.hp;
-      this.isDead = this.combatStats.isDead;
-      
-      // Atualizar o display do nome para mostrar HP
-      this.updateNameDisplay();
-      
-      // Efeito visual de dano
-      this.showDamageEffect(damage);
-      
-      return this.hp;
-    } 
-    // Fallback para o sistema antigo caso o sistema de combate não esteja disponível
-    else {
-      console.log(`[Monster.takeDamage] Monstro ${this.id} recebeu ${damage} de dano de ${attackerId} (sistema antigo)`);
-      
-      // Atualizar HP
+      // IMPORTANTE: Atualizar HP - garantindo que reduza de fato
+      const hpAntes = this.hp;
       this.hp = Math.max(0, this.hp - damage);
       
-      // Atualizar dados
-      this.data.hp = this.hp;
+      debug('combat', `Monstro ${this.id}: HP alterado de ${hpAntes} para ${this.hp}`);
       
-      // Se não está morto e tem um atacante, ficar agressivo contra ele
-      if (!this.isDead && attackerId && this.ai) {
-        console.log(`[Monster.takeDamage] Monstro ${this.id} ficará agressivo contra ${attackerId} (sistema antigo)`);
-        
-        // Definir alvo e iniciar comportamento agressivo
-        this.ai.setAggroTarget(attackerId);
-        
-        // Forçar mudança de estado para agressivo
-        if (this.ai.state !== 'aggro' && this.ai.state !== 'attack') {
-          this.ai.setState('aggro');
-          
-          // Forçar perseguição imediata - SEM TIMEOUT!
-          if (this.ai && !this.isDead) {
-            console.log(`[Monster.takeDamage] Iniciando perseguição imediata contra ${attackerId} (sistema antigo)`);
-            this.ai.pursueTarget();
+      // Garantir que os dados estejam atualizados
+      if (this.data) {
+        this.data.hp = this.hp;
+      }
+      
+      // Atualizar sistema de combate se disponível
+      if (this.combatStats) {
+        this.combatStats.hp = this.hp;
+      }
+      
+      // Mostrar efeito visual de dano
+      if (typeof this.showDamageEffect === 'function') {
+        this.showDamageEffect(damage);
+      }
+      
+      // IMPORTANTE: Atualizar o display do nome com o novo HP
+      // Usar setTimeout para garantir que a atualização aconteça após o estado ser atualizado
+      setTimeout(() => {
+        if (typeof this.updateNameDisplay === 'function' && !this.isDead) {
+          try {
+            this.updateNameDisplay();
+            debug('combat', `Display de nome atualizado para monstro ${this.id}`);
+          } catch (e) {
+            console.error(`[Monster] Erro ao atualizar display de nome:`, e);
           }
+        }
+      }, 50);
+      
+      // Verificar se morreu
+      if (this.hp <= 0) {
+        debug('combat', `Monstro ${this.id} morreu após receber ${damage} de dano`);
+        
+        // Garantir que o HP fique em zero
+        this.hp = 0;
+        
+        // Definir como morto para aplicar efeitos visuais
+        this.isDead = true;
+        
+        // Executar a morte
+        if (typeof this.die === 'function') {
+          this.die();
+        }
+        
+        return 0;
+      }
+      
+      // IMPORTANTE: Se o monstro não estiver morto, torna-se agressivo com o atacante
+      if (!this.isDead && this.ai && typeof this.ai.setAggroTarget === 'function') {
+        try {
+          debug('ai', `Monstro ${this.id} tornando-se agressivo contra ${attackerId}`);
+          this.ai.setAggroTarget(attackerId);
+        } catch (e) {
+          console.error('Erro ao definir alvo de agressividade:', e);
         }
       }
       
-      // Atualizar o display do nome para mostrar HP
-      this.updateNameDisplay();
-      
-      // Efeito visual de dano
-      this.showDamageEffect(damage);
-      
-      // Verificar se o monstro morreu
-      if (this.hp <= 0 && !this.isDead) {
-        this.die();
-      }
-      
       return this.hp;
+    } catch (error) {
+      console.error(`[Monster.takeDamage] Erro ao processar dano:`, error);
+      return this.hp || 0;
     }
   }
   
@@ -291,33 +450,60 @@ export class Monster extends Entity {
   }
   
   /**
-   * Ressuscita o monstro
+   * Respawna o monstro
    */
   respawn() {
-    if (!this.isDead) return;
+    debug('combat', `Monstro ${this.id} respawnando...`);
     
-    // Se tiver sistema de combate disponível
-    if (this.combatStats) {
-      // Reviver com HP máximo
-      this.combatStats.revive(100);
-      
-      // Sincronizar
-      this.hp = this.combatStats.hp;
-      this.isDead = this.combatStats.isDead;
-    } else {
-      // Sistema antigo
-      this.isDead = false;
-      this.hp = this.maxHp;
-    }
+    // Restaurar HP
+    this.hp = this.maxHp;
     
-    // Atualizar dados
-    this.data.hp = this.hp;
+    // Restaurar estado
+    this.isDead = false;
     
-    console.log(`Monster.respawn: Monstro ${this.id} ressuscitado`);
-    
-    // Garantir que o modelo esteja visível
+    // Restaurar modelo 3D
     if (this.model) {
       this.model.visible = true;
+      
+      // Determinar nova posição - usar dados recebidos do servidor se existirem
+      let newX, newZ;
+      
+      if (this.data.position) {
+        // Usar posição atualizada enviada pelo servidor (prioridade)
+        newX = this.data.position.x;
+        newZ = this.data.position.z;
+        debug('combat', `Usando posição do servidor para respawn: (${newX.toFixed(2)}, ${newZ.toFixed(2)})`);
+      } 
+      else if (this.data.originalPosition) {
+        // Se não tem posição específica, gerar posição aleatória baseada na original
+        const respawnRadius = MONSTER_AI_CONFIG.respawnRadius || 15;
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * respawnRadius;
+        
+        newX = this.data.originalPosition.x + Math.cos(angle) * distance;
+        newZ = this.data.originalPosition.z + Math.sin(angle) * distance;
+        
+        debug('combat', `Gerando posição aleatória para respawn: (${newX.toFixed(2)}, ${newZ.toFixed(2)})`);
+      } else {
+        // Posição padrão se não houver referência
+        newX = 0;
+        newZ = 0;
+      }
+      
+      // Aplicar nova posição ao modelo
+      this.model.position.set(
+        newX,
+        0.5, // Altura fixa padrão
+        newZ
+      );
+      
+      // Atualizar dados de posição
+      if (!this.data.position) {
+        this.data.position = {};
+      }
+      this.data.position.x = newX;
+      this.data.position.y = 0.5;
+      this.data.position.z = newZ;
     }
     
     // Reativar IA
@@ -329,6 +515,63 @@ export class Monster extends Entity {
     // Atualizar exibição
     this.updateNameDisplay();
     this.updateVisuals();
+    
+    // Criar efeito visual de respawn (brilho)
+    this.showRespawnEffect();
+  }
+  
+  /**
+   * Mostra um efeito visual de respawn
+   */
+  showRespawnEffect() {
+    if (!this.model || !this.scene) return;
+    
+    try {
+      // Criar um brilho ao redor do monstro
+      const geometry = new THREE.SphereGeometry(1.5, 16, 16);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.5
+      });
+      
+      const effectMesh = new THREE.Mesh(geometry, material);
+      effectMesh.position.copy(this.model.position);
+      this.scene.add(effectMesh);
+      
+      // Animar o efeito
+      const startTime = Date.now();
+      const duration = 1000;
+      
+      const animate = () => {
+        const elapsedTime = Date.now() - startTime;
+        const progress = Math.min(elapsedTime / duration, 1);
+        
+        // Escalar o efeito
+        effectMesh.scale.set(
+          1 + progress,
+          1 + progress,
+          1 + progress
+        );
+        
+        // Diminuir a opacidade
+        material.opacity = 0.5 * (1 - progress);
+        
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          // Remover o efeito quando terminar
+          this.scene.remove(effectMesh);
+          material.dispose();
+          geometry.dispose();
+        }
+      };
+      
+      // Iniciar animação
+      animate();
+    } catch (error) {
+      console.error("Erro ao mostrar efeito de respawn:", error);
+    }
   }
   
   /**
@@ -358,21 +601,43 @@ export class Monster extends Entity {
   }
   
   /**
-   * Atualiza a posição para o sistema de combate
+   * Atualiza a posição do monstro para sincronização
    */
   updatePosition() {
-    // Atualizar a posição para o sistema de combate
-    if (this.model) {
-      this.position = this.getPosition();
-      
-      // Verificar se houve movimento significativo
-      const dx = this.position.x - this.lastPosition.x;
-      const dy = this.position.y - this.lastPosition.y;
-      const dz = this.position.z - this.lastPosition.z;
-      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-      
-      if (dist > 0.01) {
-        this.lastPosition = { ...this.position };
+    if (!this.model) return;
+    
+    // CORREÇÃO: Forçar altura Y correta para todos os monstros
+    const FIXED_HEIGHT = 0.5; // Altura padrão dos monstros
+    
+    // Sempre manter a altura Y fixa para evitar "voo"
+    if (this.model.position.y !== FIXED_HEIGHT && this.type !== 'poring') {
+      this.model.position.y = FIXED_HEIGHT;
+    }
+    
+    // Atualizar posição
+    this.position = {
+      x: this.model.position.x,
+      y: this.model.position.y,
+      z: this.model.position.z
+    };
+    
+    // Atualizar a posição da tag de nome para seguir o monstro
+    if (this.nameTag) {
+      this.nameTag.position.set(
+        this.model.position.x,
+        this.model.position.y + 1.5, // Nome acima do monstro
+        this.model.position.z
+      );
+    }
+    
+    // Tratar rotação especial para o modelo do poring
+    if (this.type === 'poring' && this.isMoving) {
+      try {
+        // Fazer o poring girar enquanto se move (animação simples)
+        const rotationSpeed = 0.05;
+        this.model.rotation.y += rotationSpeed;
+      } catch (error) {
+        console.warn(`[Monster] Erro ao rotacionar poring: ${error.message}`);
       }
     }
   }
@@ -382,15 +647,27 @@ export class Monster extends Entity {
    * @param {string} name - Novo nome
    */
   updateNameTag(name) {
-    if (!this.nameSprite) return;
-    
-    // Criar nova textura
-    const texture = createTextTexture(name);
-    
-    // Atualizar material
-    this.nameSprite.material.map.dispose();
-    this.nameSprite.material.map = texture;
-    this.nameSprite.material.needsUpdate = true;
+    try {
+      if (!this.nameTag) {
+        console.warn(`[Monster] updateNameTag: nameTag não existe para o monstro ${this.id}`);
+        return;
+      }
+      
+      // Criar nova textura
+      const texture = createTextTexture(name);
+      
+      // Atualizar material
+      if (this.nameTag.material.map) {
+        this.nameTag.material.map.dispose();
+      }
+      
+      this.nameTag.material.map = texture;
+      this.nameTag.material.needsUpdate = true;
+      
+      debug('combat', `Nome do monstro ${this.id} atualizado para: ${name}`);
+    } catch (error) {
+      console.error(`[Monster] Erro ao atualizar nameTag:`, error);
+    }
   }
   
   /**
@@ -400,20 +677,55 @@ export class Monster extends Entity {
   showDamageEffect(damage) {
     if (!this.model) return;
     
-    // Salvar cor original
+    console.log(`[Monster] Mostrando efeito de dano: ${damage}`);
+    
+    // 1. Flash vermelho intenso
     const originalColor = this.model.material.color.clone();
+    this.model.material.color.set(0xff0000); // Vermelho brilhante
+    this.model.material.emissive = new THREE.Color(0xff0000); // Adicionar emissão
     
-    // Flash vermelho
-    this.model.material.color.set(0xff0000);
-    
-    // Voltar à cor original
+    // Voltar à cor original após um tempo
     setTimeout(() => {
       if (this.model && this.model.material) {
         this.model.material.color.copy(originalColor);
+        this.model.material.emissive = new THREE.Color(0x000000); // Remover emissão
       }
-    }, 200);
+    }, 300);
     
-    // TODO: Mostrar número de dano flutuante
+    // 2. Criar texto flutuante com o valor do dano
+    if (this.scene && this.scene.uiManager) {
+      this.scene.uiManager.showDamageNumber(this, damage, 'physical');
+    } else if (window.game && window.game.ui) {
+      window.game.ui.showDamageNumber(this, damage, 'physical');
+    }
+    
+    // 3. Fazer o modelo "pular" brevemente
+    const originalY = this.model.position.y;
+    const jumpHeight = 0.3;
+    
+    // Subir
+    this.model.position.y += jumpHeight;
+    
+    // Voltar à posição original
+    setTimeout(() => {
+      if (this.model) {
+        // Usar animação suave para descer
+        const steps = 10;
+        const stepSize = jumpHeight / steps;
+        
+        const animateDown = (step) => {
+          if (step < steps && this.model) {
+            this.model.position.y -= stepSize;
+            setTimeout(() => animateDown(step + 1), 20);
+          } else if (this.model) {
+            // Garantir posição final correta
+            this.model.position.y = Math.max(0.5, originalY);
+          }
+        };
+        
+        animateDown(0);
+      }
+    }, 150);
   }
   
   /**
@@ -434,9 +746,48 @@ export class Monster extends Entity {
    * Atualiza o display do nome para mostrar HP atual
    */
   updateNameDisplay() {
-    if (this.nameSprite) {
-      const displayName = `${this.type} (HP: ${this.hp}/${this.maxHp})`;
-      this.updateNameTag(displayName);
+    try {
+      // Verificar se o modelo e a cena estão disponíveis
+      if (!this.model || !this.scene) {
+        console.warn(`[Monster] Impossível atualizar nameTag: modelo ou cena inválidos`);
+        return;
+      }
+      
+      // Criar texto atualizado com HP - garantir que não seja null/undefined
+      const hp = this.hp || 0;
+      const maxHp = this.maxHp || 100;
+      const type = this.type || 'monster';
+      
+      // Formatação especial para destacar HP baixo
+      const hpColor = hp < maxHp * 0.3 ? 'red' : (hp < maxHp * 0.6 ? 'yellow' : 'white');
+      const displayName = `${type} (HP: ${hp}/${maxHp})`;
+      
+      // Debug
+      debug('combat', `Atualizando nameTag do monstro ${this.id} para: ${displayName}`);
+      
+      // Se já existir uma nameTag, atualizá-la
+      if (this.nameTag) {
+        // Atualizar a textura
+        const texture = createTextTexture(displayName);
+        
+        // Remover textura antiga para evitar vazamento de memória
+        if (this.nameTag.material && this.nameTag.material.map) {
+          this.nameTag.material.map.dispose();
+        }
+        
+        // Aplicar nova textura
+        this.nameTag.material.map = texture;
+        this.nameTag.material.needsUpdate = true;
+      } else {
+        // Se não existir, criar uma nova
+        this.createNameTag(displayName);
+      }
+      
+      // Atualizar posição
+      this.updateNameTagPosition();
+      
+    } catch (error) {
+      console.error(`[Monster] Erro ao atualizar nameTag:`, error);
     }
   }
   

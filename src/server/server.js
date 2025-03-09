@@ -94,11 +94,33 @@ io.on('connection', (socket) => {
         monsters[targetId].hp = 0; // Garantir que não fique negativo
         io.emit('monsterDied', targetId);
         
-        // Respawn do monstro após 5 segundos
+        // Respawn do monstro após tempo configurado (15 segundos)
         setTimeout(() => {
+          // Restaurar HP
           monsters[targetId].hp = monsters[targetId].maxHp;
+          
+          // Posição original para referência
+          const originalX = monsters[targetId].position.x;
+          const originalZ = monsters[targetId].position.z;
+          
+          // Calcular uma posição aleatória em um raio ao redor do ponto original
+          const respawnRadius = 15; // Raio máximo de respawn
+          const angle = Math.random() * Math.PI * 2; // Ângulo aleatório (0-360 graus)
+          const distance = Math.random() * respawnRadius; // Distância aleatória (0-raio)
+          
+          // Calcular nova posição com base no ângulo e distância
+          const newX = originalX + Math.cos(angle) * distance;
+          const newZ = originalZ + Math.sin(angle) * distance;
+          
+          // Atualizar a posição do monstro
+          monsters[targetId].position.x = newX;
+          monsters[targetId].position.z = newZ;
+          
+          console.log(`[SERVIDOR] Monstro ${targetId} respawnando em posição aleatória: (${newX.toFixed(2)}, ${newZ.toFixed(2)})`);
+          
+          // Enviar dados do monstro respawnado para todos os clientes
           io.emit('monsterRespawn', monsters[targetId]);
-        }, 5000);
+        }, 15000); // 15 segundos
       } else {
         // Enviar evento para todos os clientes imediatamente
         console.log(`[SERVIDOR] Emitindo monsterDamaged: ${targetId}, HP=${monsters[targetId].hp}, damage=${damage}, attackerId=${attackerId}`);

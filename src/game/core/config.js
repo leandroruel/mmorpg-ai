@@ -76,6 +76,8 @@ export const MONSTER_AI_CONFIG = {
   attackInterval: 1000, // Intervalo entre ataques do monstro (ms)
   checkPlayerInterval: 500, // Intervalo para verificar jogadores próximos (ms)
   aggroDuration: 10000, // Duração da agressividade após perder o alvo (ms)
+  respawnTime: 15000, // Tempo para o monstro reaparecer após morrer (ms) - Aumentado
+  respawnRadius: 15, // Raio em torno da posição original onde o monstro pode respawnar
   monsterTypes: {
     // Tipos de monstros e suas configurações específicas
     poring: {
@@ -83,7 +85,7 @@ export const MONSTER_AI_CONFIG = {
       aggroRadius: 0, // Só ataca se atacado
       moveSpeed: 0.02,
       attackRange: 1.0,
-      attackDamage: 5,
+      attackDamage: 3,
       attackInterval: 1500,
       color: 0xff9999 // Rosa claro
     },
@@ -122,6 +124,18 @@ export const VISUAL_EFFECTS = {
   attackColor: 0xff0000,
   moveMarkerColor: 0xffff00,
   attackMarkerColor: 0xff0000
+};
+
+// Configuração de Debug
+export const DEBUG_CONFIG = {
+  enabled: true,
+  logCombat: true,    // Logs detalhados de combate
+  logMovement: false, // Logs de movimento
+  logNetwork: true,   // Logs de rede
+  showHitboxes: false, // Mostrar hitboxes
+  immortalPlayer: false, // Jogador imortal (não recebe dano)
+  oneShotKill: false,  // Matar monstros com um golpe
+  showStats: true     // Mostrar estatísticas de performance
 };
 
 // Assets a carregar

@@ -1,0 +1,11 @@
+Model Information:
+* title:	Poring - Ragnarok Online
+* source:	https://sketchfab.com/3d-models/poring-ragnarok-online-2b5bdb43603143f8ab4ebe608f59ca5a
+* author:	kbangart (https://sketchfab.com/kbangart)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Poring - Ragnarok Online" (https://sketchfab.com/3d-models/poring-ragnarok-online-2b5bdb43603143f8ab4ebe608f59ca5a) by kbangart (https://sketchfab.com/kbangart) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -163,16 +163,19 @@ export class GameRenderer {
    * @returns {THREE.Mesh} O marcador criado
    */
   createGroundMarker(position, color = 0xffff00) {
-    const markerGeometry = new THREE.CircleGeometry(0.3, 16);
+    // Aumentar o tamanho do marcador para ficar mais visível
+    const markerGeometry = new THREE.CircleGeometry(0.5, 32);
     const markerMaterial = new THREE.MeshBasicMaterial({ 
       color,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.8,
       side: THREE.DoubleSide
     });
     
     const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-    marker.position.copy(position);
+    
+    // Posicionar o marcador ligeiramente acima do chão para evitar z-fighting
+    marker.position.set(position.x, 0.02, position.z);
     marker.rotation.x = -Math.PI / 2; // Girar para ficar paralelo ao chão
     
     this.scene.add(marker);
@@ -186,7 +189,7 @@ export class GameRenderer {
    * @param {number} color - Cor em formato hexadecimal
    * @param {number} duration - Duração em milissegundos
    */
-  createAttackEffect(start, end, color = 0xff0000, duration = 200) {
+  createAttackEffect(start, end, color = 0xff0000, duration = 400) {
     // Criar linha para o efeito de ataque
     const attackGeometry = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(start.x, start.y + 0.5, start.z),
@@ -201,9 +204,46 @@ export class GameRenderer {
     const attackLine = new THREE.Line(attackGeometry, attackMaterial);
     this.scene.add(attackLine);
     
-    // Remover após a duração
+    // Criar efeito de círculo de impacto na posição do monstro
+    const impactGeometry = new THREE.CircleGeometry(0.6, 32);
+    const impactMaterial = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide
+    });
+    
+    const impactCircle = new THREE.Mesh(impactGeometry, impactMaterial);
+    impactCircle.position.set(end.x, 0.05, end.z);  // Ligeiramente acima do chão
+    impactCircle.rotation.x = -Math.PI / 2;  // Paralelo ao chão
+    this.scene.add(impactCircle);
+    
+    // Animar o círculo de impacto (crescimento e desaparecimento)
+    let scale = 0.1;
+    let opacity = 0.7;
+    
+    const animateImpact = () => {
+      if (scale < 1.5) {
+        scale += 0.1;
+        opacity -= 0.05;
+        
+        if (impactCircle && impactCircle.material) {
+          impactCircle.scale.set(scale, scale, scale);
+          impactCircle.material.opacity = Math.max(0, opacity);
+          
+          requestAnimationFrame(animateImpact);
+        }
+      } else {
+        this.scene.remove(impactCircle);
+      }
+    };
+    
+    animateImpact();
+    
+    // Remover a linha após a duração
     setTimeout(() => {
       this.scene.remove(attackLine);
+      this.scene.remove(impactCircle);
     }, duration);
     
     return attackLine;

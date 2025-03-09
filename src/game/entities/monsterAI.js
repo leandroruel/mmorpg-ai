@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { MONSTER_AI_CONFIG } from '../core/config';
 
+// Garantir que THREE esteja disponível globalmente para este módulo
+const Vector3 = THREE.Vector3;
+
 /**
  * Classe responsável pela IA dos monstros
  */
@@ -18,11 +21,11 @@ export class MonsterAI {
     this.checkPlayerInterval = MONSTER_AI_CONFIG.checkPlayerInterval;
     this.aggroDuration = MONSTER_AI_CONFIG.aggroDuration;
     
-    this.spawnPosition = monster.model ? new THREE.Vector3(
+    this.spawnPosition = monster.model ? new Vector3(
       monster.model.position.x,
       monster.model.position.y,
       monster.model.position.z
-    ) : new THREE.Vector3(0, 0, 0);
+    ) : new Vector3(0, 0, 0);
     
     // Estado da IA
     this.isActive = false;
@@ -238,207 +241,197 @@ export class MonsterAI {
    * @param {string} playerId - ID do jogador alvo
    */
   setAggroTarget(playerId) {
-    if (!playerId) {
-      console.error("[MonsterAI.setAggroTarget] ID do jogador não fornecido");
-      return;
-    }
-    
-    // Verificações de segurança
-    if (!this.isActive) {
-      console.log(`[MonsterAI.setAggroTarget] IA não está ativa para monstro ${this.monster.id}`);
-      return;
-    }
-    
-    if (this.monster.isDead) {
-      console.log(`[MonsterAI.setAggroTarget] Monstro ${this.monster.id} está morto, não pode ficar agressivo`);
-      return;
-    }
-    
-    // Registrar a tentativa
-    console.log(`[MonsterAI.setAggroTarget] Monstro ${this.monster.id} tentando ficar agressivo contra ${playerId}`);
-    
-    // Interromper qualquer movimento atual imediatamente
-    if (this.monster.isMoving) {
-      console.log(`[MonsterAI.setAggroTarget] Interrompendo movimento do monstro ${this.monster.id}`);
-      this.monster.stopMovement();
-    }
-    
-    // Parar comportamento de perambulação
-    this.stopWandering();
-    
-    // Se já estiver perseguindo esse alvo, apenas atualizar o estado
-    if (this.aggroTarget === playerId) {
-      console.log(`[MonsterAI.setAggroTarget] Monstro ${this.monster.id} já está perseguindo o jogador ${playerId}`);
-      
-      // Garantir estado correto
-      if (this.state !== 'aggro' && this.state !== 'attack') {
-        this.setState('aggro');
-      }
-      
-      // Mesmo assim, tentar perseguição novamente - pode ter sido interrompida
-      console.log(`[MonsterAI.setAggroTarget] Reiniciando perseguição imediata`);
-      this.pursueTarget();
-      
-      return;
-    }
-    
-    // Armazenar novo alvo
-    console.log(`[MonsterAI.setAggroTarget] Monstro ${this.monster.id} agora perseguirá o jogador ${playerId}`);
-    this.aggroTarget = playerId;
-    
-    // Limpar timeout de perda de agressividade se existir
-    if (this.aggroTimeout) {
-      clearTimeout(this.aggroTimeout);
-      this.aggroTimeout = null;
-    }
-    
-    // Mudar imediatamente para estado agressivo
-    this.setState('aggro');
-    
-    // Iniciar perseguição IMEDIATAMENTE, sem qualquer delay
-    console.log(`[MonsterAI.setAggroTarget] Monstro ${this.monster.id} iniciando perseguição imediata do jogador ${playerId}`);
-    this.pursueTarget();
-  }
-  
-  /**
-   * Persegue o alvo (jogador) dentro do range de detecção
-   */
-  pursueTarget() {
-    if (!this.isActive || this.monster.isDead) {
-      console.log(`[MonsterAI.pursueTarget] Monstro ${this.monster.id} não pode perseguir (inativo/morto)`);
-      this.stopMoving();
-      return;
-    }
-    
-    // Verificar se temos um alvo de aggro válido
-    if (!this.aggroTarget) {
-      this.loseAggroTarget();
-      return;
-    }
-    
-    // Buscar o jogador pelo ID do alvo
-    const entityManager = this.entityManager;
-    if (!entityManager) {
-      console.error(`[MonsterAI.pursueTarget] EntityManager não disponível para monstro ${this.monster.id}`);
-      return;
-    }
-    
-    const players = entityManager.players;
-    let targetPlayer = null;
-    
-    // Encontrar o jogador pelo ID
-    if (players.has(this.aggroTarget)) {
-      targetPlayer = players.get(this.aggroTarget);
-    }
-    
-    if (!targetPlayer || !targetPlayer.model) {
-      console.log(`[MonsterAI.pursueTarget] Jogador alvo ${this.aggroTarget} não encontrado, perdendo interesse`);
-      this.loseAggroTarget();
-      return;
-    }
-    
-    // Calcular distância até o alvo
-    if (this.monster.model && targetPlayer.model) {
-      const monsterPosition = this.monster.model.position;
-      const targetPosition = targetPlayer.model.position;
-      const distance = monsterPosition.distanceTo(targetPosition);
-      
-      // Verificar se está dentro do range de ataque
-      if (distance <= this.monster.attackRange) {
-        console.log(`[MonsterAI.pursueTarget] Monstro ${this.monster.id} alcançou o jogador ${this.aggroTarget}, iniciando ataque`);
-        this.setState('attack');
-        this.startAttacking();
+    try {
+      // Verificar parâmetros
+      if (!playerId) {
+        console.error("[MonsterAI] Tentativa de definir alvo sem ID do jogador");
         return;
       }
       
-      // Verificar se está fora do range de perseguição
-      if (distance > this.monster.aggroRange * 1.5) {
-        console.log(`[MonsterAI.pursueTarget] Jogador ${this.aggroTarget} saiu do alcance, perdendo interesse`);
+      console.log(`⚔️🎯 [MonsterAI] ${this.monster?.id || 'Desconhecido'} definindo alvo: ${playerId}`);
+      
+      // Verificar estado do monstro
+      if (!this.monster || this.monster.isDead) {
+        console.log(`[MonsterAI] Monstro morto ou inválido, não pode definir alvo`);
+        return;
+      }
+      
+      // Parar comportamentos atuais
+      this.stopWandering();
+      this.stopAttacking();
+      
+      // Parar todos os timers
+      this.clearAllTimers();
+      
+      // Definir o alvo
+      this.aggroTarget = playerId;
+      this.lastAggroTime = Date.now();
+      
+      // Mudar o estado para perseguição
+      this.setState('aggro');
+      
+      // Começar a perseguir o alvo imediatamente
+      this.pursueTarget();
+      
+      // Iniciar comportamento de ataque
+      if (!this.attackIntervalId) {
+        this.startAttacking();
+      }
+    } catch (error) {
+      console.error("[MonsterAI] Erro ao definir alvo de agressividade:", error);
+    }
+  }
+  
+  /**
+   * Persegue o alvo (jogador)
+   */
+  pursueTarget() {
+    // Verificações básicas
+    if (!this.isActive || this.monster.isDead || !this.aggroTarget) {
+      this.loseAggroTarget();
+      return;
+    }
+    
+    try {
+      // Obter o jogador alvo
+      const targetPlayer = this.entityManager?.players.get(this.aggroTarget);
+      
+      // Verificar se o jogador é válido
+      if (!targetPlayer || !targetPlayer.model || targetPlayer.isDead) {
+        console.log(`[MonsterAI] Alvo ${this.aggroTarget} indisponível`);
         this.loseAggroTarget();
         return;
       }
       
-      // Calcular direção normalizada para o jogador
-      const direction = new THREE.Vector3();
-      direction.subVectors(targetPosition, monsterPosition).normalize();
+      // Calcular distância até o jogador
+      const monsterPosition = this.monster.model.position;
+      const playerPosition = targetPlayer.model.position;
+      const distance = monsterPosition.distanceTo(playerPosition);
       
-      // SISTEMA DE COLISÃO: Checar colisões com outros jogadores e entidades
-      const allEntities = this.getAllEntities();
-      const collisionRadius = this.monster.collisionRadius || 1.0; // Raio de colisão padrão
-      let adjustedDirection = this.calculateCollisionAvoidance(direction, monsterPosition, allEntities, collisionRadius);
+      // Se o jogador estiver muito longe, desistir da perseguição
+      if (distance > 30) {
+        console.log(`[MonsterAI] Jogador muito longe (${distance.toFixed(1)}), desistindo`);
+        this.loseAggroTarget();
+        return;
+      }
       
-      // Calcular a nova posição considerando a direção ajustada
+      // Se estiver dentro do alcance de ataque, iniciar ataque
+      if (distance <= this.monster.attackRange * 1.2) {
+        console.log(`[MonsterAI] Jogador no alcance de ataque (${distance.toFixed(1)})`);
+        this.startAttacking();
+        return;
+      }
+      
+      // Mover em direção ao jogador
+      console.log(`[MonsterAI] Perseguindo jogador - distância: ${distance.toFixed(1)}`);
+      
+      // Calcular direção normalizada
+      const direction = new Vector3()
+        .subVectors(playerPosition, monsterPosition)
+        .normalize();
+      
+      // Calcular nova posição (IMPORTANTE: mantendo a altura Y atual)
       const moveSpeed = this.monster.moveSpeed || 0.05;
-      const newPosition = monsterPosition.clone().add(adjustedDirection.multiplyScalar(moveSpeed));
+      const movementVector = new Vector3(
+        direction.x * moveSpeed,
+        0, // Não alterar a altura Y durante o movimento
+        direction.z * moveSpeed
+      );
+      
+      // CORREÇÃO: Manter altura fixa para evitar "voo"
+      const FIXED_HEIGHT = 0.5;  // Altura padrão fixa
+      
+      const newPosition = new Vector3(
+        monsterPosition.x + movementVector.x,
+        FIXED_HEIGHT,  // Forçar altura fixa para evitar "voo"
+        monsterPosition.z + movementVector.z
+      );
       
       // Atualizar posição
       this.monster.model.position.copy(newPosition);
       
-      // Girar o modelo para a direção do movimento
-      if (adjustedDirection.lengthSq() > 0.001) {
-        const targetRotation = Math.atan2(adjustedDirection.x, adjustedDirection.z);
-        this.monster.model.rotation.y = targetRotation;
-      }
+      // Girar para a direção do movimento
+      const targetRotation = Math.atan2(direction.x, direction.z);
+      this.monster.model.rotation.y = targetRotation;
       
-      this.startMovingAnimation();
+      // Indicar que o monstro está se movendo
+      this.monster.isMoving = true;
+      
+      // Atualizar posição no sistema
+      if (typeof this.monster.updatePosition === 'function') {
+        this.monster.updatePosition();
+      }
+    } catch (error) {
+      console.error("[MonsterAI] Erro ao perseguir alvo:", error);
     }
   }
   
   /**
-   * Calcula a direção ajustada para evitar colisões
+   * Calcula ajustes para evitar colisões durante o movimento
    * @param {THREE.Vector3} direction - Direção original
    * @param {THREE.Vector3} position - Posição atual
-   * @param {Array} entities - Lista de entidades para verificar colisão
+   * @param {Array} entities - Lista de entidades a evitar
    * @param {number} radius - Raio de colisão
    * @returns {THREE.Vector3} - Direção ajustada
    */
   calculateCollisionAvoidance(direction, position, entities, radius) {
-    // Criar cópia da direção original
-    const adjustedDirection = direction.clone();
+    // Parâmetros default
+    radius = radius || 1.0;
     
-    // Força total de repulsão
-    const avoidanceForce = new THREE.Vector3();
+    // Verificar se direção é válida
+    if (!direction || !position) return direction;
     
-    // Verificar cada entidade para possíveis colisões
-    for (const entity of entities) {
-      // Ignorar a própria entidade (monstro) e entidades sem modelo
-      if (entity === this.monster || !entity.model) continue;
-      
-      // Distância mínima de colisão (soma dos raios)
-      const entityRadius = entity.collisionRadius || 0.5; // Raio padrão para outras entidades
-      const minDistance = radius + entityRadius;
-      
-      // Calcular distância entre as entidades
-      const entityPosition = entity.model.position;
-      const distanceVec = new THREE.Vector3().subVectors(position, entityPosition);
-      const distance = distanceVec.length();
-      
-      // Se estiver dentro do raio de colisão, calcular força de repulsão
-      if (distance < minDistance) {
-        console.log(`[MonsterAI.Colisão] Evitando colisão com ${entity.id || 'entidade'} (distância: ${distance.toFixed(2)} < ${minDistance.toFixed(2)})`);
+    // Força para evitar colisões
+    const avoidanceForce = new Vector3();
+    let collisionsDetected = 0;
+    
+    try {
+      // Verificar colisões com todas as entidades
+      entities.forEach(entity => {
+        // Pular a entidade atual
+        if (!entity || !entity.model || entity === this.monster) return;
         
-        // Normalizar o vetor de distância
-        if (distance > 0) {
-          distanceVec.normalize();
-        } else {
-          // Se estão exatamente no mesmo lugar, gerar um vetor aleatório
-          distanceVec.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
+        // Pegar posição da entidade
+        const entityPosition = entity.model.position;
+        
+        // Calcular vetor de distância
+        const distanceVec = new Vector3().subVectors(position, entityPosition);
+        const distance = distanceVec.length();
+        
+        // Se estiver próximo o suficiente para colisão
+        const collisionThreshold = radius + (entity.collisionRadius || 0.5);
+        if (distance < collisionThreshold) {
+          // Calcular vetor para longe da entidade (normalizado)
+          let force = 1.0 - (distance / collisionThreshold); // Mais forte quanto mais perto
+          force = Math.min(force * 2, 1.5); // Limitar força máxima
+          
+          // Adicionar força normalizada
+          avoidanceForce.add(
+            distanceVec.normalize().multiplyScalar(force)
+          );
+          
+          collisionsDetected++;
         }
-        
-        // Calcular força de repulsão (inversamente proporcional à distância)
-        const force = Math.max(0, 1.0 - distance / minDistance);
-        avoidanceForce.add(distanceVec.multiplyScalar(force * 1.5)); // Fator 1.5 para aumentar a força
+      });
+      
+      // Se não houve colisões, retornar direção original
+      if (collisionsDetected === 0) return direction;
+      
+      // Normalizar força resultante se houve múltiplas colisões
+      if (collisionsDetected > 1) {
+        avoidanceForce.divideScalar(collisionsDetected);
       }
+      
+      // Combinar direção original com força de evitação
+      const resultDirection = direction.clone().add(
+        avoidanceForce.multiplyScalar(1.5) // Aumentar um pouco a força de evitação
+      ).normalize();
+      
+      return resultDirection;
+    } catch (error) {
+      console.error("[MonsterAI] Erro ao calcular evitação de colisões:", error);
+      return direction; // Em caso de erro, manter a direção original
     }
-    
-    // Aplicar força de repulsão à direção original
-    if (avoidanceForce.lengthSq() > 0) {
-      // Adicionar força de repulsão (com menor peso) à direção
-      adjustedDirection.add(avoidanceForce);
-      adjustedDirection.normalize(); // Normalizar para manter a velocidade
-    }
-    
-    return adjustedDirection;
   }
   
   /**
@@ -468,160 +461,181 @@ export class MonsterAI {
   }
   
   /**
-   * Perde o alvo atual após um tempo
+   * Perde o alvo atual e volta para o estado de patrulha
    */
   loseAggroTarget() {
-    if (!this.aggroTarget) return;
-    
-    console.log(`Monstro ${this.monster.id} perdeu o alvo ${this.aggroTarget}`);
-    
-    // Parar o ataque se estiver atacando
-    if (this.state === 'attack') {
-      if (this.attackInterval) {
-        clearInterval(this.attackInterval);
-        this.attackInterval = null;
-      }
-    }
-    
-    // Registrar quando perdeu o alvo
-    this.aggroLostTime = Date.now();
-    
-    // Definir timeout para voltar ao estado normal
-    this.aggroTimeout = setTimeout(() => {
+    try {
+      if (!this.aggroTarget) return;
+      
+      console.log(`[MonsterAI] ${this.monster.id} perdendo alvo ${this.aggroTarget}`);
+      
+      // Limpar alvo
       this.aggroTarget = null;
+      
+      // Parar de atacar
+      this.stopAttacking();
+      
+      // Mudar estado
       this.setState('idle');
-      this.scheduleNextWander();
-    }, this.aggroDuration);
+      
+      // Voltar para a posição de spawn se estiver muito longe
+      const distanceToSpawn = this.monster.model ? 
+        this.monster.model.position.distanceTo(this.spawnPosition) : 999;
+      
+      if (distanceToSpawn > this.wanderRadius * 2) {
+        console.log(`[MonsterAI] Retornando para spawn, distância: ${distanceToSpawn.toFixed(1)}`);
+        
+        // Mover de volta à posição original
+        const direction = new Vector3()
+          .subVectors(this.spawnPosition, this.monster.model.position)
+          .normalize();
+        
+        // Velocidade de retorno um pouco mais rápida
+        const returnSpeed = (this.monster.moveSpeed || 0.05) * 1.2;
+        
+        // Criar temporizador para retorno (mais suave)
+        const returnInterval = setInterval(() => {
+          if (!this.monster || !this.monster.model || this.monster.isDead || this.aggroTarget) {
+            clearInterval(returnInterval);
+            return;
+          }
+          
+          const currentPos = this.monster.model.position;
+          const distanceToSpawn = currentPos.distanceTo(this.spawnPosition);
+          
+          if (distanceToSpawn < 0.5) {
+            // Chegou ao destino
+            this.monster.model.position.copy(this.spawnPosition);
+            this.monster.isMoving = false;
+            clearInterval(returnInterval);
+            
+            // Retirar tempo de inatividade
+            setTimeout(() => {
+              this.setState('wandering');
+              this.scheduleNextWander();
+            }, 1000);
+          } else {
+            // Mover em direção ao ponto de spawn
+            const moveVector = direction.clone().multiplyScalar(returnSpeed);
+            currentPos.add(moveVector);
+            
+            // Garantir que a rotação acompanhe o movimento
+            const targetRotation = Math.atan2(direction.x, direction.z);
+            this.monster.model.rotation.y = targetRotation;
+            
+            // Atualizar posição
+            if (typeof this.monster.updatePosition === 'function') {
+              this.monster.updatePosition();
+            }
+          }
+        }, 16);
+      } else {
+        // Está perto do spawn, apenas volta ao comportamento normal
+        this.setState('wandering');
+        this.scheduleNextWander();
+      }
+    } catch (error) {
+      console.error("[MonsterAI] Erro ao perder alvo:", error);
+    }
   }
   
   /**
    * Inicia o comportamento de ataque
    */
   startAttacking() {
+    // Verificações básicas
     if (!this.isActive || this.monster.isDead || !this.aggroTarget) {
-      console.log(`MonsterAI.startAttacking: Monstro ${this.monster.id} não pode iniciar ataque (inativo/morto/sem alvo)`);
       return;
     }
     
-    console.log(`MonsterAI.startAttacking: Monstro ${this.monster.id} iniciando comportamento de ataque contra ${this.aggroTarget}`);
+    // Parar movimento
+    this.monster.isMoving = false;
     
-    // Garantir que estamos no estado correto
-    if (this.state !== 'attack') {
-      this.setState('attack');
-    }
+    // Mudar estado
+    this.setState('attack');
+    console.log(`[MonsterAI] ${this.monster.id} INICIANDO ATAQUE contra jogador ${this.aggroTarget}`);
     
-    // Parar qualquer movimento
-    if (this.monster.isMoving) {
-      this.monster.stopMovement();
-    }
+    // Limpar qualquer timer existente
+    this.clearAllTimers();
     
-    // Cancelar qualquer ataque em progresso
-    if (this.attackInterval) {
-      clearInterval(this.attackInterval);
-      this.attackInterval = null;
-    }
-    
-    // Iniciar ciclo de ataques
+    // Realizar primeiro ataque imediatamente
     this.performAttack();
     
-    // Configurar intervalo de ataques
+    // Configurar timer para ataques subsequentes
     this.attackInterval = setInterval(() => {
+      if (!this.monster || this.monster.isDead || !this.aggroTarget) {
+        this.stopAttacking();
+        return;
+      }
+      
+      // Tentar atacar novamente
       this.performAttack();
-    }, this.monster.attackInterval || MONSTER_AI_CONFIG.attackInterval);
+    }, 1000); // Atacar a cada 1 segundo
   }
   
   /**
-   * Executa um ataque ao jogador alvo
+   * Executa um ataque contra o jogador alvo
    */
   performAttack() {
-    if (!this.isActive || this.monster.isDead || !this.aggroTarget) {
-      console.log(`[MonsterAI.performAttack] Monstro ${this.monster.id} não pode atacar (inativo/morto/sem alvo)`);
-      this.stopAttacking();
-      return;
-    }
-    
-    // Obter o jogador alvo
-    const entityManager = this.entityManager;
-    if (!entityManager) {
-      console.error(`[MonsterAI.performAttack] EntityManager não disponível para monstro ${this.monster.id}`);
-      return;
-    }
-    
-    const players = entityManager.players;
-    let targetPlayer = null;
-    
-    // Encontrar o jogador pelo ID
-    if (players.has(this.aggroTarget)) {
-      targetPlayer = players.get(this.aggroTarget);
-    }
-    
-    if (!targetPlayer || !targetPlayer.model) {
-      console.log(`[MonsterAI.performAttack] Jogador alvo ${this.aggroTarget} não encontrado para monstro ${this.monster.id}`);
-      this.loseAggroTarget();
-      return;
-    }
-    
-    // Verificar se o jogador está no alcance de ataque
-    if (this.monster.model && targetPlayer.model) {
-      const distance = this.monster.model.position.distanceTo(targetPlayer.model.position);
-      console.log(`[MonsterAI.performAttack] Distância para ataque: ${distance.toFixed(2)}, alcance: ${this.monster.attackRange}`);
-      
-      // Se estiver fora do alcance, voltar a perseguir
-      if (distance > this.monster.attackRange * 1.2) {
-        console.log(`[MonsterAI.performAttack] Jogador ${this.aggroTarget} fora de alcance, voltando a perseguir`);
-        this.setState('aggro');
+    try {
+      // Verificações de segurança
+      if (!this.monster || !this.aggroTarget || !this.isActive || this.monster.isDead) {
         this.stopAttacking();
+        return;
+      }
+      
+      // Verificar cooldown de ataque
+      const now = Date.now();
+      const attackInterval = this.monster.attackInterval || 1500; // Usar intervalo configurado ou padrão de 1.5s
+      
+      if (this.lastAttackTime && (now - this.lastAttackTime < attackInterval)) {
+        return; // Ainda em cooldown
+      }
+      
+      // Obter o jogador alvo
+      const targetPlayer = this.entityManager?.players.get(this.aggroTarget);
+      
+      if (!targetPlayer || !targetPlayer.model || targetPlayer.isDead) {
+        console.log(`[MonsterAI] Alvo de ataque ${this.aggroTarget} não disponível`);
+        return;
+      }
+      
+      // Verificar distância para ataque
+      const attackRange = this.monster.attackRange || 1.5;
+      const distance = this.monster.model.position.distanceTo(targetPlayer.model.position);
+      
+      if (distance > attackRange * 1.2) { // adicionar tolerância de 20%
+        // Jogador fora de alcance, tentar se aproximar
         this.pursueTarget();
         return;
       }
       
-      // Realizar o ataque se estiver em alcance
-      console.log(`[MonsterAI.performAttack] Monstro ${this.monster.id} atacando jogador ${this.aggroTarget}`);
+      // Atacar o jogador!
+      console.log(`[MonsterAI] 🔥 ${this.monster.id} atacando jogador ${targetPlayer.id}`);
       
-      // Criar efeito visual de ataque
-      if (this.monster.scene && this.monster.scene.renderer) {
-        this.monster.scene.renderer.createAttackEffect(
-          this.monster.model.position.clone(),
-          targetPlayer.model.position.clone()
-        );
+      // Atualizar timestamp do último ataque
+      this.lastAttackTime = now;
+      
+      // Executar ataque
+      if (typeof this.monster.attackPlayer === 'function') {
+        this.monster.attackPlayer(targetPlayer);
       }
       
-      // BALANCEAMENTO DE DANO
-      // Obter nível e ataque do monstro
-      const monsterLevel = this.monster.combatStats ? this.monster.combatStats.level : 1;
-      const monsterAttack = this.monster.combatStats ? this.monster.combatStats.attack : this.monster.attackDamage;
+      // Virar para a direção do jogador
+      const direction = new Vector3()
+        .subVectors(targetPlayer.model.position, this.monster.model.position)
+        .normalize();
       
-      // Obter nível e defesa do jogador
-      const playerLevel = targetPlayer.combatStats ? targetPlayer.combatStats.level : 
-                         (targetPlayer.level || 10); // Nível padrão 10 para jogadores
-      const playerDefense = targetPlayer.combatStats ? targetPlayer.combatStats.defense : 
-                           (targetPlayer.defense || 20); // Defesa padrão 20 para jogadores
+      // Ajustar rotação do monstro para olhar para o alvo
+      const targetRotation = Math.atan2(direction.x, direction.z);
+      this.monster.model.rotation.y = targetRotation;
       
-      // Calcular fator de nível - monstros de nível inferior causam menos dano
-      const levelFactor = Math.max(0.5, monsterLevel / Math.max(1, playerLevel));
-      
-      // Calcular fator de defesa - quanto maior a defesa, menor o dano
-      // Fórmula: quanto maior a defesa, menor o dano (com um mínimo garantido)
-      const defenseFactor = 1 - Math.min(0.75, playerDefense / (playerDefense + 50 + monsterLevel * 5));
-      
-      // Calcular dano base
-      const baseDamage = monsterAttack * levelFactor;
-      
-      // Aplicar defesa e variação aleatória
-      const randomVariation = 0.8 + (Math.random() * 0.4); // 80% a 120%
-      const finalDamage = Math.max(1, Math.floor(baseDamage * defenseFactor * randomVariation));
-      
-      console.log(`[MonsterAI.performAttack] Cálculo de dano: ${monsterAttack} (ataque) * ${levelFactor.toFixed(2)} (nível) * ${defenseFactor.toFixed(2)} (defesa) * ${randomVariation.toFixed(2)} (variação) = ${finalDamage}`);
-      
-      // Aplicar dano (através do EntityManager para processamento correto)
-      if (entityManager.damagePlayer) {
-        entityManager.damagePlayer(this.aggroTarget, finalDamage, this.monster.id);
-      } else {
-        // Fallback: aplicar dano diretamente
-        if (targetPlayer.takeDamage) {
-          targetPlayer.takeDamage(finalDamage, this.monster.id);
-        }
+      // Atualizar a posição do nome do monstro
+      if (typeof this.monster.updateNameDisplay === 'function') {
+        this.monster.updateNameDisplay();
       }
+    } catch (error) {
+      console.error("[MonsterAI] Erro ao executar ataque:", error);
     }
   }
   
@@ -636,29 +650,93 @@ export class MonsterAI {
   }
   
   /**
-   * Faz o monstro se mover para uma posição aleatória dentro do raio de perambulação
+   * Movimenta o monstro aleatoriamente dentro de sua área de patrulha
    */
   wander() {
-    if (!this.isActive || !this.monster.model || this.monster.isDead || this.monster.isMoving 
-        || this.state === 'aggro' || this.state === 'attack') return;
-    
-    // Gerar um ponto aleatório dentro do raio de perambulação
-    const randomAngle = Math.random() * Math.PI * 2;
-    const randomRadius = Math.random() * this.wanderRadius;
-    
-    // Calcular nova posição (mantendo a altura y atual)
-    const newX = this.spawnPosition.x + Math.cos(randomAngle) * randomRadius;
-    const newZ = this.spawnPosition.z + Math.sin(randomAngle) * randomRadius;
-    
-    // Definir posição alvo
-    const targetPosition = new THREE.Vector3(newX, this.monster.model.position.y, newZ);
-    
-    // Iniciar movimento
-    console.log(`Monstro ${this.monster.id} perambulando para (${newX.toFixed(2)}, ${newZ.toFixed(2)})`);
-    this.monster.moveToPosition(targetPosition);
-    
-    // Registrar tempo do último movimento
-    this.lastWanderTime = Date.now();
+    try {
+      // Verificações básicas
+      if (!this.monster || !this.monster.model || this.monster.isDead || this.aggroTarget) {
+        return;
+      }
+      
+      // Definir como ativo
+      this.setState('wandering');
+      
+      // Gerar ponto aleatório dentro do raio de patrulha
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.random() * this.wanderRadius;
+      
+      const newX = this.spawnPosition.x + Math.cos(angle) * radius;
+      const newZ = this.spawnPosition.z + Math.sin(angle) * radius;
+      
+      // Criar posição alvo
+      const targetPosition = new Vector3(newX, this.monster.model.position.y, newZ);
+      
+      // Verificar se o monstro já está na posição
+      const distanceToTarget = this.monster.model.position.distanceTo(targetPosition);
+      if (distanceToTarget < 0.2) {
+        // Já está próximo, reagendar
+        this.scheduleNextWander();
+        return;
+      }
+      
+      console.log(`[MonsterAI] ${this.monster.id} vagando para (${newX.toFixed(1)}, ${newZ.toFixed(1)})`);
+      
+      // Mover para o ponto gerado
+      const moveToTarget = () => {
+        // Verificações de segurança
+        if (!this.monster || !this.monster.model || this.monster.isDead || this.monster.isAttacking || this.aggroTarget) {
+          this.wanderIntervalId = null;
+          return;
+        }
+        
+        const currentPosition = this.monster.model.position;
+        const direction = new Vector3()
+          .subVectors(targetPosition, currentPosition)
+          .normalize();
+        
+        // Calcular distância atual
+        const distToTarget = currentPosition.distanceTo(targetPosition);
+        
+        // Se já chegou no destino
+        if (distToTarget < 0.2) {
+          if (this.wanderIntervalId) {
+            clearInterval(this.wanderIntervalId);
+            this.wanderIntervalId = null;
+          }
+          
+          this.monster.isMoving = false;
+          this.scheduleNextWander();
+          return;
+        }
+        
+        // Mover na direção
+        const speed = this.monster.moveSpeed || 0.05;
+        currentPosition.x += direction.x * speed;
+        currentPosition.z += direction.z * speed;
+        
+        // CORREÇÃO: Manter altura fixa para evitar "voo"
+        currentPosition.y = 0.5;  // Altura padrão fixa
+        
+        // Atualizar rotação para a direção do movimento
+        const targetRotation = Math.atan2(direction.x, direction.z);
+        this.monster.model.rotation.y = targetRotation;
+        
+        // Marcar como em movimento
+        this.monster.isMoving = true;
+        
+        // Atualizar posição
+        if (typeof this.monster.updatePosition === 'function') {
+          this.monster.updatePosition();
+        }
+      };
+      
+      // Iniciar movimento periódico
+      this.wanderIntervalId = setInterval(moveToTarget, 16);  // ~60fps
+    } catch (error) {
+      console.error("[MonsterAI] Erro ao vagar:", error);
+      this.scheduleNextWander(); // Tentar novamente depois
+    }
   }
   
   /**
@@ -744,5 +822,15 @@ export class MonsterAI {
     }
     
     this.scheduleNextWander();
+  }
+  
+  /**
+   * Interrompe o movimento do monstro
+   */
+  stopMoving() {
+    if (this.monster.isMoving) {
+      this.monster.isMoving = false;
+      console.log(`[MonsterAI.stopMoving] Monstro ${this.monster.id} parou de se mover`);
+    }
   }
 } 

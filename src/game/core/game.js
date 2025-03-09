@@ -5,77 +5,293 @@ import { GameRenderer } from '../rendering/renderer';
 import { EntityManager } from '../entities/entityManager';
 import { InputManager } from '../controls/inputManager';
 import { initCombatSystem } from '../combat'; // Importar o sistema de combate
+import { 
+  VISUAL_EFFECTS, 
+  MOVEMENT_CONFIG, 
+  COMBAT_CONFIG, 
+  NETWORK_CONFIG,
+  DEBUG_CONFIG
+} from './config';
 
 /**
  * Classe principal do jogo MMORPG
  */
 export class MMORPGGame {
   constructor() {
-    console.log('Iniciando MMORPG Game...');
-    console.time('inicialização');
-    
-    // Registrar o tempo de início para fins de depuração
-    window.gameStartTime = Date.now();
-    
-    // Criar componentes do jogo
-    this.ui = new UserInterface();
-    this.networkManager = new NetworkManager();
-    this.renderer = new GameRenderer();
-    
-    // Handlers de atualização
-    this.updateHandlers = new Map();
-    
-    // Inicializar componentes
-    this.initialize();
+    try {
+      console.log('Iniciando MMORPG Game...');
+      console.time('inicialização');
+      
+      // Registrar o tempo de início para fins de depuração
+      window.gameStartTime = Date.now();
+      
+      // Definições iniciais
+      this.isInitialized = false;
+      this.entityManager = null;
+      this.inputManager = null;
+      this.resourceLoader = null;
+      
+      // IMPORTANTE: Garantir que a instância do jogo esteja disponível globalmente
+      // antes de chamar quaisquer métodos
+      window.game = this;
+      console.log("[Game] Instância do jogo registrada globalmente como window.game");
+      
+      // Armazenar referência à última instância para depuração e solução de problemas
+      MMORPGGame.instance = this;
+      
+      // Criar componentes iniciais
+      console.log("[Game] Inicializando UI...");
+      this.ui = new UserInterface();
+      
+      // Verificar se a UI foi criada corretamente
+      if (!this.ui) {
+        console.error("[Game] ERRO: Falha ao inicializar UI");
+        this.ui = new UserInterface(); // Tentar novamente
+      }
+      
+      // Registrar UI globalmente para casos de emergência
+      window.gameUI = this.ui;
+      
+      console.log("[Game] Inicializando NetworkManager...");
+      this.networkManager = new NetworkManager();
+      
+      console.log("[Game] Inicializando GameRenderer...");
+      this.renderer = new GameRenderer();
+      
+      // Handlers de atualização
+      this.updateHandlers = new Map();
+      
+      // Inicializar componentes após todas as definições
+      console.log("[Game] Chamando initialize()...");
+      this.initialize();
+    } catch (error) {
+      console.error('[Game] ERRO CRÍTICO no construtor:', error);
+      
+      // Tentar criar uma mensagem de erro visível (sem alert)
+      try {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.position = 'fixed';
+        errorDiv.style.top = '10px';
+        errorDiv.style.left = '10px';
+        errorDiv.style.right = '10px';
+        errorDiv.style.padding = '20px';
+        errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+        errorDiv.style.color = 'white';
+        errorDiv.style.borderRadius = '5px';
+        errorDiv.style.zIndex = '9999';
+        errorDiv.style.whiteSpace = 'pre-wrap';
+        errorDiv.textContent = `ERRO CRÍTICO na inicialização do jogo: ${error}\n\nPor favor, recarregue a página.`;
+        document.body.appendChild(errorDiv);
+      } catch (e) {
+        console.error('Erro crítico ao inicializar o jogo. Verifique o console e recarregue a página.', e);
+      }
+    }
+  }
+  
+  // Método estático para acessar a última instância do jogo
+  static getInstance() {
+    return MMORPGGame.instance;
   }
   
   /**
    * Inicializa o jogo
    */
   initialize() {
-    // Inicializar renderer
-    const { scene } = this.renderer.initialize();
-    
-    // Criar gerenciador de entidades
-    this.entityManager = new EntityManager(scene, this.networkManager, this.renderer);
-    
-    // Configurar gerenciador de input (será configurado após o login)
-    this.inputManager = null;
-    
-    // Criar carregador de recursos
-    this.resourceLoader = new ResourceLoader(
-      // Callback de progresso
-      (progress) => {
-        this.ui.updateLoadingProgress(progress * 0.3); // 30% do progresso total
-      },
-      // Callback de conclusão
-      (resources) => {
-        console.log('Recursos carregados:', resources);
-        this.connect();
+    try {
+      console.log('Inicializando jogo...');
+      
+      // Inicializar configuração de debug
+      this.DEBUG_CONFIG = Object.assign({}, DEBUG_CONFIG);
+      window.game = this;
+      
+      console.log('[Game] Inicializando componentes do jogo...');
+      
+      // Verificar se o renderer existe
+      if (!this.renderer) {
+        console.error('[Game] Renderer não existe, criando...');
+        this.renderer = new GameRenderer();
       }
-    );
-    
-    // Iniciar carregamento de recursos
-    this.preloadResources();
+      
+      // Inicializar renderer
+      console.log('[Game] Inicializando renderer...');
+      const rendererResult = this.renderer.initialize();
+      
+      if (!rendererResult || !rendererResult.scene) {
+        throw new Error('Falha ao inicializar o renderer: scene não disponível');
+      }
+      
+      const { scene } = rendererResult;
+      
+      // Criar gerenciador de entidades
+      console.log('[Game] Criando gerenciador de entidades...');
+      this.entityManager = new EntityManager(scene, this.networkManager, this.renderer);
+      
+      // Configurar gerenciador de input (será configurado após o login)
+      this.inputManager = null;
+      
+      // Verificar se a UI existe
+      if (!this.ui) {
+        console.error('[Game] UI não existe, criando...');
+        this.ui = new UserInterface();
+        window.gameUI = this.ui;
+      }
+      
+      // Criar carregador de recursos com tratamento de erros
+      console.log('[Game] Criando ResourceLoader...');
+      this.resourceLoader = new ResourceLoader(
+        // Callback de progresso com verificação de segurança
+        (progress) => {
+          try {
+            if (this.ui) {
+              this.ui.updateLoadingProgress(progress * 0.3); // 30% do progresso total
+            } else {
+              console.error('[Game] UI não disponível para atualizar progresso');
+            }
+          } catch (error) {
+            console.error('[Game] Erro ao atualizar progresso de carregamento:', error);
+          }
+        },
+        // Callback de conclusão
+        (resources) => {
+          console.log('Recursos carregados:', resources);
+          this.connect();
+        }
+      );
+      
+      // Iniciar carregamento de recursos
+      console.log('[Game] Iniciando carregamento de recursos...');
+      this.preloadResources();
+      
+      console.log('[Game] Inicialização concluída com sucesso.');
+    } catch (error) {
+      console.error('[Game] ERRO CRÍTICO na inicialização:', error);
+      
+      // Tentar mostrar erro na UI
+      if (this.ui) {
+        try {
+          this.ui.showErrorMessage('Erro crítico na inicialização: ' + error.message);
+        } catch (e) {
+          console.error('[Game] Falha ao mostrar erro na UI:', e);
+        }
+      }
+      
+      // Backup: mostrar erro visível
+      const errorDiv = document.createElement('div');
+      errorDiv.style.position = 'fixed';
+      errorDiv.style.top = '50%';
+      errorDiv.style.left = '50%';
+      errorDiv.style.transform = 'translate(-50%, -50%)';
+      errorDiv.style.padding = '20px';
+      errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+      errorDiv.style.color = 'white';
+      errorDiv.style.borderRadius = '5px';
+      errorDiv.style.zIndex = '9999';
+      errorDiv.textContent = 'Erro crítico na inicialização: ' + error.message;
+      document.body.appendChild(errorDiv);
+    }
   }
   
   /**
    * Pré-carrega recursos essenciais
    */
   preloadResources() {
-    // Atualizar progresso inicial
-    this.ui.updateLoadingProgress(0.05);
-    
-    // Pré-carregar recursos críticos
-    this.resourceLoader.preloadCriticalResources()
-      .then(() => {
-        // Carregar todos os modelos
-        return this.resourceLoader.loadAllModels();
-      })
-      .catch(error => {
-        console.error('Erro ao carregar recursos:', error);
-        this.ui.showErrorMessage('Erro ao carregar recursos necessários. Por favor, recarregue a página.');
-      });
+    try {
+      // Verificar se a UI existe
+      if (!this.ui) {
+        console.error('[Game] ERRO CRÍTICO: UI não inicializada. Recriando...');
+        this.ui = new UserInterface();
+        window.gameUI = this.ui; // Referência de emergência
+      }
+      
+      // Atualizar progresso inicial com verificação de segurança
+      try {
+        console.log('[Game] Atualizando progresso de carregamento: 5%');
+        this.ui.updateLoadingProgress(0.05);
+      } catch (error) {
+        console.error('[Game] Erro ao atualizar progresso:', error);
+      }
+      
+      // Verificar se resourceLoader existe
+      if (!this.resourceLoader) {
+        console.error('[Game] ResourceLoader não inicializado. Inicializando...');
+        this.resourceLoader = new ResourceLoader(
+          // Callback de progresso com tratamento de erro adicional
+          (progress) => {
+            try {
+              console.log(`[Game] Progresso de carregamento: ${(progress * 30).toFixed(0)}%`);
+              if (this.ui) this.ui.updateLoadingProgress(progress * 0.3);
+            } catch (err) {
+              console.error('[Game] Erro ao atualizar progresso de recursos:', err);
+            }
+          },
+          // Callback de conclusão
+          (resources) => {
+            console.log('[Game] Recursos carregados:', resources);
+            this.connect();
+          }
+        );
+      }
+      
+      // Pré-carregar recursos críticos com tratamento de erro melhorado
+      console.log('[Game] Iniciando carregamento de recursos críticos...');
+      this.resourceLoader.preloadCriticalResources()
+        .then(() => {
+          console.log('[Game] Recursos críticos carregados. Carregando modelos...');
+          // Carregar todos os modelos
+          return this.resourceLoader.loadAllModels();
+        })
+        .catch(error => {
+          console.error('[Game] Erro ao carregar recursos:', error);
+          
+          // Tentar recuperar da falha
+          if (this.ui) {
+            this.ui.showErrorMessage('Erro ao carregar recursos necessários. Por favor, recarregue a página.');
+          } else {
+            // Criar mensagem de erro manual se a UI falhou
+            const errorDiv = document.createElement('div');
+            errorDiv.style.position = 'fixed';
+            errorDiv.style.top = '50%';
+            errorDiv.style.left = '50%';
+            errorDiv.style.transform = 'translate(-50%, -50%)';
+            errorDiv.style.padding = '20px';
+            errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+            errorDiv.style.color = 'white';
+            errorDiv.style.borderRadius = '5px';
+            errorDiv.style.zIndex = '9999';
+            errorDiv.textContent = 'Erro crítico ao carregar recursos. Por favor, recarregue a página.';
+            document.body.appendChild(errorDiv);
+          }
+        });
+    } catch (error) {
+      console.error('[Game] Erro crítico ao pré-carregar recursos:', error);
+      
+      // Mostrar mensagem sem alert
+      try {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.position = 'fixed';
+        errorDiv.style.top = '50%';
+        errorDiv.style.left = '50%';
+        errorDiv.style.transform = 'translate(-50%, -50%)';
+        errorDiv.style.padding = '20px';
+        errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+        errorDiv.style.color = 'white';
+        errorDiv.style.borderRadius = '5px';
+        errorDiv.style.zIndex = '9999';
+        errorDiv.textContent = 'Erro crítico ao inicializar o jogo. Por favor, recarregue a página.';
+        document.body.appendChild(errorDiv);
+        
+        // Oferecer botão para recarregar
+        const reloadButton = document.createElement('button');
+        reloadButton.textContent = 'Recarregar Página';
+        reloadButton.style.marginTop = '10px';
+        reloadButton.style.padding = '5px 10px';
+        reloadButton.style.cursor = 'pointer';
+        reloadButton.onclick = () => window.location.reload();
+        errorDiv.appendChild(reloadButton);
+      } catch (e) {
+        console.error('Não foi possível mostrar mensagem de erro', e);
+      }
+    }
   }
   
   /**
@@ -243,7 +459,7 @@ export class MMORPGGame {
         localPlayer.stopAttack();
       }
       
-      // Se o input manager estiver atacando este monstro, parar o auto ataque
+      // Se the input manager estiver atacando este monstro, parar o auto ataque
       if (this.inputManager && this.inputManager.autoAttackTarget === monsterId) {
         console.log(`Parando auto ataque pois o monstro ${monsterId} morreu`);
         this.inputManager.stopAutoAttack();
@@ -720,6 +936,22 @@ export class MMORPGGame {
         monsterId: monster.id,
         killerId: killer.id
       });
+    }
+  }
+  
+  // Adicionar um método para ajustar as configurações de debug
+  toggleDebugOption(option, value) {
+    if (!this.DEBUG_CONFIG) return;
+    
+    if (option === 'all') {
+      this.DEBUG_CONFIG.enabled = value;
+      console.log(`Debug ${value ? 'ativado' : 'desativado'}`);
+      return;
+    }
+    
+    if (this.DEBUG_CONFIG.hasOwnProperty(option)) {
+      this.DEBUG_CONFIG[option] = value;
+      console.log(`Debug ${option} ${value ? 'ativado' : 'desativado'}`);
     }
   }
 } 

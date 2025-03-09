@@ -20,7 +20,7 @@ export class InputManager {
     
     // Adicionar estado de configurações
     this.config = {
-      autoAttack: false
+      autoAttack: true
     };
     
     // Variáveis para auto ataque
@@ -84,19 +84,21 @@ export class InputManager {
   }
   
   /**
-   * Define o estado de ataque
+   * Define o estado de ataque do jogador
    * @param {boolean} isAttacking - Se o jogador está atacando
-   * @param {string|null} target - ID do alvo do ataque
+   * @param {string} target - Alvo do ataque
    * @param {boolean} shouldStopAutoAttack - Se deve interromper o auto ataque existente (padrão: true)
    */
   setAttacking(isAttacking, target = null, shouldStopAutoAttack = true) {
     this.isAttacking = isAttacking;
     this.attackTarget = target;
     
-    // Se não está mais atacando e deve parar o auto ataque, parar
+    // Parar auto-ataque apenas se solicitado
     if (!isAttacking && shouldStopAutoAttack && this.autoAttackInterval) {
       this.stopAutoAttack();
     }
+    
+    console.log(`[InputManager] Estado de ataque alterado: ${isAttacking ? 'Atacando' : 'Não atacando'} ${target ? target : ''}`);
   }
   
   /**
@@ -113,23 +115,61 @@ export class InputManager {
    * @param {MouseEvent} event - Evento do mouse
    */
   handleLeftClick(event) {
-    // Verificar se o jogador está disponível
+    event.preventDefault();
+    
+    // Se o jogador não estiver disponível, não fazer nada
     if (!this.player || !this.player.model) return;
     
+    // Atualizar coordenadas do mouse
     this.updateMouseCoordinates(event);
     this.raycaster.setFromCamera(this.mouse, this.renderer.camera);
     
     // Verificar interseção com monstros
     const monsters = this.entityManager.getMonsterModels();
-    const intersects = this.raycaster.intersectObjects(monsters);
+    const monsterIntersects = this.raycaster.intersectObjects(monsters);
     
-    if (intersects.length > 0) {
-      const clickedMonster = intersects[0].object;
+    // CASO: Clicou em um monstro para atacar
+    if (monsterIntersects.length > 0) {
+      const clickedMonster = monsterIntersects[0].object;
       const monsterId = this.entityManager.getEntityIdByModel(clickedMonster);
       
       if (monsterId) {
-        console.log(`Atacando monstro ${monsterId}`);
-        this.entityManager.attackMonster(monsterId);
+        console.log(`[InputManager] Clique em monstro: ${monsterId}`);
+        
+        // Obter o monstro
+        const monster = this.entityManager.monsters.get(monsterId);
+        if (!monster || monster.isDead) {
+          console.log(`[InputManager] Monstro não disponível: ${monsterId}`);
+          return;
+        }
+        
+        // Verificar distância
+        const distance = this.player.model.position.distanceTo(monster.model.position);
+        
+        if (distance <= this.player.attackRange * 1.2) {
+          // Já está em alcance, atacar diretamente
+          console.log(`[InputManager] Atacando monstro: ${monsterId} (distância: ${distance.toFixed(1)})`);
+          
+          // Atacar o monstro uma vez
+          const attackSuccess = this.player.attackEntity(monsterId);
+          
+          // Iniciar auto-ataque se configurado
+          if (attackSuccess && this.config.autoAttack) {
+            console.log(`[InputManager] Iniciando auto-ataque contra ${monsterId}`);
+            this.startAutoAttack(monsterId);
+          }
+        } else {
+          // Fora de alcance, mostrar mensagem visual
+          console.log(`[InputManager] Monstro fora de alcance: ${distance.toFixed(1)} > ${this.player.attackRange}`);
+          
+          // Mostrar um marcador visual na posição do monstro
+          this.showDestinationMarker(monster.model.position, 0xff0000);
+          
+          // Notificar o jogador (mensagem na tela)
+          if (window.game && window.game.ui) {
+            window.game.ui.showMessage("Monstro fora de alcance! Use o botão direito para aproximar-se.", 2000, "warning");
+          }
+        }
       }
     }
   }
@@ -142,108 +182,118 @@ export class InputManager {
     event.preventDefault();
     
     // Verificar se o jogador está disponível
-    if (!this.player || !this.player.model) return;
+    if (!this.player || !this.player.model) {
+      console.log("[InputManager] Jogador não disponível para processar clique");
+      return;
+    }
     
     this.updateMouseCoordinates(event);
     this.raycaster.setFromCamera(this.mouse, this.renderer.camera);
-    
-    // Parar qualquer auto ataque atual
-    this.stopAutoAttack();
-    
-    // Resetar explicitamente o alvo do auto ataque quando começa uma nova ação
-    this.autoAttackTarget = null;
     
     // Verificar interseção com monstros
     const monsters = this.entityManager.getMonsterModels();
     const monsterIntersects = this.raycaster.intersectObjects(monsters);
     
+    // CASO 1: Clicou em um monstro
     if (monsterIntersects.length > 0) {
-      // Clicou em um monstro - mover até ele e atacar
       const clickedMonster = monsterIntersects[0].object;
       const monsterId = this.entityManager.getEntityIdByModel(clickedMonster);
       
       if (monsterId) {
-        console.log(`Movendo até o monstro ${monsterId} para atacá-lo...`);
+        console.log(`[InputManager] Clique direito em monstro: ${monsterId}`);
         
-        // Obter posições
-        const monsterPosition = clickedMonster.position;
-        const playerPosition = this.player.model.position;
-        
-        // Calcular posição para se aproximar
-        const targetPosition = calculateApproachPosition(
-          playerPosition,
-          monsterPosition,
-          this.player.attackRange * 0.9 // Ligeiramente mais perto para garantir
-        );
-        
-        // Criar marcador
-        this.showDestinationMarker(targetPosition, VISUAL_EFFECTS.attackMarkerColor);
-        
-        // Se o auto ataque estiver ativado, armazenar o alvo antes de se mover
-        const autoAttackEnabled = this.config.autoAttack;
-        
-        // Armazenar o ID do monstro de forma segura
-        const targetMonsterId = monsterId;
-        
-        // Importante: definir o ID do alvo ANTES de iniciar o movimento
-        if (autoAttackEnabled) {
-          console.log(`Armazenando alvo para auto ataque: ${targetMonsterId}`);
-          this.autoAttackTarget = targetMonsterId;
+        // Obter o monstro
+        const monster = this.entityManager.monsters.get(monsterId);
+        if (!monster || monster.isDead) {
+          return;
         }
         
-        // Iniciar movimento até o monstro
-        this.player.moveToPosition(targetPosition, () => {
-          // Callback quando chegar ao destino
-          this.player.attackEntity(targetMonsterId);
+        // Verificar se já está em alcance de ataque
+        const distance = this.player.model.position.distanceTo(monster.model.position);
+        if (distance <= this.player.attackRange * 1.2) {
+          // Já está em alcance, atacar diretamente
+          console.log(`[InputManager] Já em alcance de ataque (${distance.toFixed(1)}), atacando diretamente`);
           
-          // Adicionar um pequeno atraso para que o ataque inicial seja processado
-          // antes de iniciar o auto ataque
-          if (autoAttackEnabled) {
-            console.log(`Preparando para iniciar auto ataque contra ${targetMonsterId}`);
-            
-            // Verificar se o ID do alvo ainda é válido
-            if (this.autoAttackTarget !== targetMonsterId) {
-              console.log(`Restaurando alvo do auto ataque para ${targetMonsterId}`);
-              this.autoAttackTarget = targetMonsterId;
-            }
-            
-            setTimeout(() => {
-              // Verificar novamente se o alvo ainda é válido
-              if (this.autoAttackTarget === targetMonsterId) {
-                this.startAutoAttack(targetMonsterId);
-              } else {
-                console.log(`O alvo mudou durante o movimento, não iniciando auto ataque`);
-              }
-            }, 500);
+          // Parar qualquer auto ataque atual (apenas para trocar de alvo)
+          if (this.autoAttackTarget !== monsterId && this.autoAttackInterval) {
+            console.log(`[InputManager] Trocando alvo de auto-ataque para ${monsterId}`);
+            clearInterval(this.autoAttackInterval);
+            this.autoAttackInterval = null;
+          }
+          
+          this.player.attackEntity(monsterId);
+          
+          // Iniciar auto-ataque para o novo alvo
+          if (this.config.autoAttack) {
+            this.startAutoAttack(monsterId);
+          }
+          return;
+        }
+        
+        // Não está em alcance, mover até o monstro para atacar
+        console.log(`[InputManager] Fora de alcance (${distance.toFixed(1)}), movendo para atacar`);
+        
+        // Mostrar indicador visual onde o monstro está
+        this.showDestinationMarker(monster.model.position, VISUAL_EFFECTS.attackMarkerColor);
+        
+        // Configurar estado de ataque
+        this.setAttacking(true, monsterId);
+        
+        // Parar auto-ataque atual (apenas para trocar de alvo)
+        if (this.autoAttackTarget !== monsterId && this.autoAttackInterval) {
+          console.log(`[InputManager] Parando auto-ataque atual durante movimentação`);
+          clearInterval(this.autoAttackInterval);
+          this.autoAttackInterval = null;
+        }
+        
+        // Calcular posição de aproximação
+        const approachPos = calculateApproachPosition(
+          this.player.model.position,
+          monster.model.position,
+          this.player.attackRange * 0.9
+        );
+        
+        // Mover até a posição
+        this.player.moveToPosition(approachPos, () => {
+          // Callback executado quando chegar ao destino
+          console.log(`[InputManager] Chegou ao destino, verificando monstro`);
+          
+          // Verificar se o monstro ainda está disponível
+          const updatedMonster = this.entityManager.monsters.get(monsterId);
+          if (!updatedMonster || updatedMonster.isDead) {
+            console.log(`[InputManager] Monstro ${monsterId} não disponível ou morto`);
+            this.setAttacking(false);
+            return;
+          }
+          
+          // Atacar o monstro
+          console.log(`[InputManager] Atacando monstro ${monsterId}`);
+          const success = this.player.attackEntity(monsterId);
+          
+          // Iniciar auto-ataque se configurado e ataque bem-sucedido
+          if (success && this.config.autoAttack) {
+            this.startAutoAttack(monsterId);
           }
         });
-        
-        // Configurar estado
-        this.setMoving(true);
-        this.setAttacking(true, monsterId);
         
         return;
       }
     }
     
-    // Não clicou em um monstro - mover normalmente
+    // CASO 2: Clicou no chão (mover normalmente)
     this.setAttacking(false, null);
     
-    // Calcular interseção com o plano do chão
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const targetPoint = new THREE.Vector3();
+    // Interseção com plano imaginário (chão)
+    const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Plano XZ
+    const planeTarget = new THREE.Vector3();
+    this.raycaster.ray.intersectPlane(ground, planeTarget);
     
-    if (this.raycaster.ray.intersectPlane(groundPlane, targetPoint)) {
-      // Criar marcador
-      this.showDestinationMarker(targetPoint, VISUAL_EFFECTS.moveMarkerColor);
+    if (planeTarget) {
+      // Mostrar marcador visual no destino
+      this.showDestinationMarker(planeTarget, VISUAL_EFFECTS.moveMarkerColor);
       
-      // Mover para a posição
-      this.player.moveToPosition(targetPoint);
-      
-      // Configurar estado
-      this.setMoving(true);
-      
-      console.log(`Movendo para: x=${targetPoint.x.toFixed(2)}, z=${targetPoint.z.toFixed(2)}`);
+      // Mover o jogador para o ponto clicado
+      this.player.moveToPosition(planeTarget);
     }
   }
   
@@ -402,97 +452,149 @@ export class InputManager {
   }
   
   /**
-   * Inicia o auto ataque contra um alvo
+   * Inicia o auto-ataque a um alvo
    * @param {string} targetId - ID do alvo
    */
   startAutoAttack(targetId) {
-    if (!this.config.autoAttack || !this.player) return;
-    
-    console.log(`Iniciando auto ataque contra o monstro ${targetId}`);
-    
-    // Armazenar o ID do alvo em uma variável local para evitar problemas de escopo
-    const storedTargetId = targetId;
-    this.autoAttackTarget = storedTargetId;
-    
-    // Limpar intervalo existente
-    this.stopAutoAttack();
-    
-    // Armazenar uma referência direta ao modelo do monstro
-    const monsterModels = this.entityManager.getMonsterModels();
-    let targetModel = null;
-    
-    // Tentar encontrar o modelo correspondente ao ID
-    for (const model of monsterModels) {
-      const id = this.entityManager.getEntityIdByModel(model);
-      console.log(`Comparando ID: ${id} com alvo: ${storedTargetId}`);
-      if (id === storedTargetId) {
-        targetModel = model;
-        break;
-      }
-    }
-    
-    if (!targetModel) {
-      console.log(`Não conseguiu encontrar modelo para o monstro com ID ${storedTargetId}`);
-      // Temos o ID, mas não conseguimos encontrar o modelo, vamos usar só o ID
-      // e verificar se o ataque funciona mesmo assim
-    } else {
-      console.log(`Modelo do monstro encontrado, posição:`, targetModel.position);
-      
-      // Verificar se o monstro está morto
-      if (targetModel.userData && targetModel.userData.isDead) {
-        console.log(`Não iniciando auto ataque: monstro ${storedTargetId} está morto`);
-        this.autoAttackTarget = null;
-        return;
-      }
-    }
-    
-    console.log(`Configurando intervalo de auto ataque para o monstro ${storedTargetId}`);
-    
-    // Atacar imediatamente uma vez para garantir que comece rápido
-    setTimeout(() => {
-      if (this.autoAttackTarget === storedTargetId) {
-        console.log(`Iniciando ataque inicial do auto ataque contra ${storedTargetId}`);
-        // Vamos usar setAttacking para não interferir no auto ataque
-        this.setAttacking(true, storedTargetId, false);
-        this.player.attackEntity(storedTargetId);
-      }
-    }, 100);
-    
-    // Verificar se o monstro ainda existe e atacar periodicamente
-    this.autoAttackInterval = setInterval(() => {
-      // Usar o ID armazenado na closure para garantir que não mude
-      const currentTargetId = this.autoAttackTarget;
-      
-      // Verificar se o ID do alvo ainda é válido
-      if (!currentTargetId) {
-        console.log(`Auto ataque cancelado: ID do alvo perdido`);
-        this.stopAutoAttack();
+    try {
+      // Verificações básicas
+      if (!targetId || !this.player) {
+        console.error("[InputManager] Não foi possível iniciar auto-ataque: alvo ou jogador inválido");
         return;
       }
       
-      // Verificar se o monstro ainda existe e não está morto
-      const monsterModel = this.entityManager.getMonsterModels().find(model => 
-        this.entityManager.getEntityIdByModel(model) === currentTargetId
+      // Verificar se o auto-ataque está ativado nas configurações
+      if (!this.config.autoAttack) {
+        console.log("[InputManager] Auto-ataque desativado nas configurações");
+        return;
+      }
+      
+      // Se já está atacando o mesmo alvo, não reiniciar
+      if (this.autoAttackTarget === targetId && this.autoAttackInterval) {
+        console.log(`[InputManager] Já está auto-atacando ${targetId}`);
+        return;
+      }
+      
+      // Parar auto-ataque anterior se existir
+      if (this.autoAttackInterval) {
+        clearInterval(this.autoAttackInterval);
+        this.autoAttackInterval = null;
+      }
+      
+      // Verificar se o monstro existe
+      const monster = this.entityManager.monsters.get(targetId);
+      if (!monster || !monster.model || monster.isDead) {
+        console.error(`[InputManager] Não foi possível iniciar auto-ataque: monstro ${targetId} não está disponível`);
+        return;
+      }
+      
+      console.log(`[InputManager] ✓ Iniciando auto-ataque contra ${targetId} (${monster.type || 'desconhecido'})`);
+      
+      // Armazenar ID do alvo
+      this.autoAttackTarget = targetId;
+      this.setAttacking(true, targetId, false);
+      
+      // Usar o cooldown da arma do jogador + um pequeno buffer para garantir que não haverá falhas
+      const attackInterval = (this.player.attackCooldownTime || 1200) + 50; // ms
+      
+      // Mostrar mensagem visual para o jogador
+      if (window.game && window.game.ui) {
+        window.game.ui.showMessage(`Auto-ataque ativado contra ${monster.type || 'monstro'}`, 2000, 'success');
+      }
+      
+      // Configurar intervalo de auto-ataque (first attack happens immediately in handleLeftClick/handleRightClick)
+      this.autoAttackInterval = setInterval(() => {
+        try {
+          // Verificar se o jogador existe
+          if (!this.player || !this.player.model) {
+            console.log("[InputManager] Jogador não disponível, parando auto-ataque");
+            this.stopAutoAttack();
+            return;
+          }
+          
+          // Verificar se o auto-ataque ainda está ativado
+          if (!this.config.autoAttack) {
+            console.log("[InputManager] Auto-ataque desativado, parando");
+            this.stopAutoAttack();
+            return;
+          }
+          
+          // Obter o monstro atualizado
+          const monster = this.entityManager.monsters.get(this.autoAttackTarget);
+          
+          // Verificar se o monstro existe e não está morto
+          if (!monster || !monster.model || monster.isDead) {
+            console.log(`[InputManager] Monstro ${this.autoAttackTarget} indisponível, parando auto-ataque`);
+            this.stopAutoAttack();
+            
+            // Procurar por outro monstro próximo para atacar
+            this.findAndAttackNearbyMonster();
+            return;
+          }
+          
+          // Verificar distância
+          const distance = this.player.model.position.distanceTo(monster.model.position);
+          const attackRangeWithTolerance = this.player.attackRange * 1.2; // 20% de tolerância
+          
+          if (distance > attackRangeWithTolerance) {
+            console.log(`[InputManager] Monstro ${this.autoAttackTarget} fora de alcance (${distance.toFixed(1)}), parando auto-ataque`);
+            this.stopAutoAttack();
+            return;
+          }
+          
+          // Executar ataque
+          console.log(`[InputManager] Auto-atacando ${this.autoAttackTarget}`);
+          this.player.attackEntity(this.autoAttackTarget);
+        } catch (error) {
+          console.error("[InputManager] Erro durante auto-ataque:", error);
+          this.stopAutoAttack();
+        }
+      }, attackInterval);
+    } catch (error) {
+      console.error("[InputManager] Erro ao iniciar auto-ataque:", error);
+    }
+  }
+  
+  /**
+   * Procura um monstro próximo para atacar automaticamente
+   * @returns {boolean} Se encontrou e atacou um monstro
+   */
+  findAndAttackNearbyMonster() {
+    if (!this.config.autoAttack || !this.player || !this.player.model) {
+      return false;
+    }
+    
+    // Buscar monstros próximos
+    const nearbyMonsters = Array.from(this.entityManager.monsters.values())
+      .filter(monster => 
+        monster && 
+        monster.model && 
+        !monster.isDead && 
+        monster.model.position.distanceTo(this.player.model.position) <= this.player.attackRange * 1.2
       );
+    
+    // Ordenar por distância
+    nearbyMonsters.sort((a, b) => 
+      a.model.position.distanceTo(this.player.model.position) - 
+      b.model.position.distanceTo(this.player.model.position)
+    );
+    
+    // Atacar o mais próximo se encontrado
+    if (nearbyMonsters.length > 0) {
+      const closestMonster = nearbyMonsters[0];
+      console.log(`[InputManager] Auto-ataque: encontrado novo alvo próximo (${closestMonster.id})`);
       
-      if (monsterModel && monsterModel.userData && monsterModel.userData.isDead) {
-        console.log(`Auto ataque cancelado: monstro ${currentTargetId} está morto`);
-        this.stopAutoAttack();
-        this.autoAttackTarget = null;
-        return;
+      // Atacar o novo monstro
+      const success = this.player.attackEntity(closestMonster.id);
+      
+      // Iniciar auto-ataque se o ataque foi bem-sucedido
+      if (success) {
+        this.startAutoAttack(closestMonster.id);
+        return true;
       }
-      
-      console.log(`Tentando auto ataque no monstro ${currentTargetId}`);
-      
-      // Garantir que estamos usando o ID correto
-      const result = this.player.attackEntity(currentTargetId);
-      
-      // Se o ataque explicitamente falhar, podemos parar o auto ataque
-      if (result === false) {
-        console.log(`Auto ataque falhou - parando auto ataque`);
-        this.stopAutoAttack();
-      }
-    }, 1500); // Usar um valor fixo de 1,5 segundos para garantir que funcione
+    }
+    
+    return false;
   }
   
   /**
@@ -500,13 +602,13 @@ export class InputManager {
    */
   stopAutoAttack() {
     if (this.autoAttackInterval) {
-      console.log('Parando auto ataque existente');
+      console.log("[InputManager] Parando auto-ataque");
       clearInterval(this.autoAttackInterval);
       this.autoAttackInterval = null;
+      this.autoAttackTarget = null;
+      
+      // Resetar estado de ataque
+      this.setAttacking(false, null, false);
     }
-    
-    // Importante: não apagar o ID do alvo aqui para evitar problemas
-    // Vamos apenas limpá-lo quando explicitamente necessário
-    // this.autoAttackTarget = null;
   }
 } 

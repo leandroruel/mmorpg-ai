@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { createElement } from '../utils/helpers';
 
 /**
@@ -91,26 +92,7 @@ export class UserInterface {
           }, { id: 'mp-bar' }, '', mpBarContainer);
         } else {
           this.elements.mpBar = document.getElementById('mp-bar');
-        }
-        
-        // Elementos de texto para HP/MP
-        if (!document.getElementById('hp-text')) {
-          this.elements.hpText = createElement('div', {
-            marginTop: '5px',
-            fontSize: '12px'
-          }, { id: 'hp-text' }, 'HP: 100/100', this.elements.hud);
-        } else {
-          this.elements.hpText = document.getElementById('hp-text');
-        }
-        
-        if (!document.getElementById('mp-text')) {
-          this.elements.mpText = createElement('div', {
-            marginTop: '5px',
-            fontSize: '12px'
-          }, { id: 'mp-text' }, 'MP: 50/50', this.elements.hud);
-        } else {
-          this.elements.mpText = document.getElementById('mp-text');
-        }
+        }      
       }
     }
     
@@ -125,33 +107,128 @@ export class UserInterface {
    * @param {number} increment - Incremento ao progresso (de 0 a 1)
    */
   updateLoadingProgress(increment) {
-    if (!this.elements.progressBar) return;
+    // Garantir que os elementos existam
+    this.checkElements();
     
-    const currentWidth = parseFloat(this.elements.progressBar.style.width || '0');
-    const newWidth = Math.min(currentWidth + increment * 100, 100);
-    this.elements.progressBar.style.width = `${newWidth}%`;
-    
-    // Atualizar texto de carregamento
-    if (this.elements.progressText) {
-      if (newWidth < 20) {
-        this.elements.progressText.textContent = 'Conectando ao servidor...';
-      } else if (newWidth < 50) {
-        this.elements.progressText.textContent = 'Carregando modelos...';
-      } else if (newWidth < 80) {
-        this.elements.progressText.textContent = 'Preparando mundo do jogo...';
-      } else if (newWidth < 100) {
-        this.elements.progressText.textContent = 'Quase pronto...';
-      } else {
-        this.elements.progressText.textContent = 'Pronto!';
+    if (!this.elements.progressBar) {
+      console.error("[UI] Erro: progressBar não encontrado");
+      // Tentar recuperar ou criar elementos
+      this.createLoadingElements();
+      // Verificar novamente
+      if (!this.elements.progressBar) {
+        console.warn("[UI] Não foi possível atualizar o progresso. Element não encontrado.");
+        return;
       }
     }
     
-    // Se completou o carregamento
-    if (newWidth >= 100) {
-      setTimeout(() => {
-        this.hideLoading();
-        this.showGameUI();
-      }, 500);
+    try {
+      // Obter largura atual e calcular nova largura
+      const currentWidth = parseFloat(this.elements.progressBar.style.width || '0');
+      const newWidth = Math.min(currentWidth + increment * 100, 100);
+      
+      // Atualizar barra de progresso
+      this.elements.progressBar.style.width = `${newWidth}%`;
+      
+      // Atualizar texto de carregamento
+      if (this.elements.progressText) {
+        if (newWidth < 20) {
+          this.elements.progressText.textContent = 'Conectando ao servidor...';
+        } else if (newWidth < 50) {
+          this.elements.progressText.textContent = 'Carregando modelos...';
+        } else if (newWidth < 80) {
+          this.elements.progressText.textContent = 'Preparando mundo do jogo...';
+        } else if (newWidth < 100) {
+          this.elements.progressText.textContent = 'Quase pronto...';
+        } else {
+          this.elements.progressText.textContent = 'Pronto!';
+        }
+      }
+      
+      // Se completou o carregamento
+      if (newWidth >= 100) {
+        setTimeout(() => {
+          this.hideLoading();
+          this.showGameUI();
+        }, 500);
+      }
+    } catch (error) {
+      console.error("[UI] Erro ao atualizar progresso:", error);
+    }
+  }
+  
+  /**
+   * Cria elementos de carregamento se eles não existirem
+   * @private
+   */
+  createLoadingElements() {
+    console.log("[UI] Tentando criar elementos de carregamento");
+    
+    // Verificar se já existe uma tela de carregamento
+    let loadingScreen = document.getElementById('loading');
+    
+    if (!loadingScreen) {
+      // Criar tela de carregamento
+      loadingScreen = document.createElement('div');
+      loadingScreen.id = 'loading';
+      loadingScreen.style.position = 'fixed';
+      loadingScreen.style.top = '0';
+      loadingScreen.style.left = '0';
+      loadingScreen.style.width = '100%';
+      loadingScreen.style.height = '100%';
+      loadingScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+      loadingScreen.style.display = 'flex';
+      loadingScreen.style.flexDirection = 'column';
+      loadingScreen.style.justifyContent = 'center';
+      loadingScreen.style.alignItems = 'center';
+      loadingScreen.style.zIndex = '1000';
+      document.body.appendChild(loadingScreen);
+      
+      // Título
+      const title = document.createElement('h1');
+      title.textContent = 'MMORPG Game';
+      title.style.color = 'white';
+      title.style.marginBottom = '20px';
+      loadingScreen.appendChild(title);
+      
+      // Container da barra de progresso
+      const progressContainer = document.createElement('div');
+      progressContainer.style.width = '80%';
+      progressContainer.style.height = '20px';
+      progressContainer.style.backgroundColor = '#333';
+      progressContainer.style.borderRadius = '10px';
+      progressContainer.style.overflow = 'hidden';
+      loadingScreen.appendChild(progressContainer);
+      
+      // Barra de progresso
+      const progressBar = document.createElement('div');
+      progressBar.id = 'loading-progress';
+      progressBar.style.width = '0%';
+      progressBar.style.height = '100%';
+      progressBar.style.backgroundColor = '#4CAF50';
+      progressBar.style.transition = 'width 0.3s';
+      progressContainer.appendChild(progressBar);
+      
+      // Texto de carregamento
+      const progressText = document.createElement('div');
+      progressText.id = 'loading-text';
+      progressText.textContent = 'Iniciando...';
+      progressText.style.color = 'white';
+      progressText.style.marginTop = '10px';
+      loadingScreen.appendChild(progressText);
+      
+      // Atualizar referências
+      this.elements.loadingScreen = loadingScreen;
+      this.elements.progressBar = progressBar;
+      this.elements.progressText = progressText;
+      
+      console.log("[UI] Elementos de carregamento criados com sucesso");
+    } else {
+      // Se a tela já existe, apenas atualizar referências
+      this.elements.loadingScreen = loadingScreen;
+      this.elements.progressBar = document.getElementById('loading-progress');
+      this.elements.progressText = document.getElementById('loading-text');
+      
+      console.log("[UI] Referências de elementos de carregamento atualizadas");
     }
   }
   
@@ -222,6 +299,9 @@ export class UserInterface {
         }
       }, 10000);
     }
+    
+    // Adicionar painel de debug
+    this.createDebugPanel();
   }
   
   /**
@@ -236,26 +316,9 @@ export class UserInterface {
     const hpElement = document.getElementById('player-hp');
     const maxHpElement = document.getElementById('player-max-hp');
     
-    // Garantir que temos o elemento de MP (criar se não existir)
+    // Verificar o elemento de MP
     let mpElement = document.getElementById('player-mp');
     let maxMpElement = document.getElementById('player-max-mp');
-    
-    if (!mpElement || !maxMpElement) {
-      // Buscar o HUD
-      const hud = document.getElementById('hud');
-      if (hud) {
-        // Criar elemento de MP se não existir
-        if (!document.getElementById('mp-container')) {
-          const mpContainer = document.createElement('div');
-          mpContainer.id = 'mp-container';
-          mpContainer.innerHTML = 'MP: <span id="player-mp">0</span>/<span id="player-max-mp">100</span>';
-          hud.appendChild(mpContainer);
-          
-          mpElement = document.getElementById('player-mp');
-          maxMpElement = document.getElementById('player-max-mp');
-        }
-      }
-    }
     
     // Atualizar nome e classe
     if (nameElement) nameElement.textContent = player.name || 'Desconhecido';
@@ -638,117 +701,286 @@ export class UserInterface {
    * @param {Object} options - Opções adicionais
    */
   showDamageNumber(entity, amount, type = 'physical', options = {}) {
-    if (!entity || !entity.model) return;
-    
-    // Determinar cor baseada no tipo de dano
-    let color = '#ffffff'; // branco (padrão)
-    
-    if (type === 'physical') {
-      color = '#ff4444'; // vermelho
-    } else if (type === 'magical') {
-      color = '#44aaff'; // azul
-    } else if (type === 'fire') {
-      color = '#ff6600'; // laranja
-    } else if (type === 'ice') {
-      color = '#66ccff'; // azul claro
-    } else if (type === 'poison') {
-      color = '#66ff66'; // verde
-    } else if (type === 'heal') {
-      color = '#66ff66'; // verde
-      amount = '+' + amount; // adicionar + para cura
-    }
-    
-    // Ajustar tamanho e cor para críticos
-    const fontSize = options.critical ? '24px' : '18px';
-    const fontWeight = options.critical ? 'bold' : 'normal';
-    
-    // Criar elemento HTML para o número de dano
-    const damageElement = document.createElement('div');
-    damageElement.textContent = amount;
-    damageElement.style.position = 'absolute';
-    damageElement.style.color = color;
-    damageElement.style.fontFamily = 'Arial, sans-serif';
-    damageElement.style.fontSize = fontSize;
-    damageElement.style.fontWeight = fontWeight;
-    damageElement.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)';
-    damageElement.style.pointerEvents = 'none';
-    damageElement.style.zIndex = '1000';
-    
-    // Adicionar ao DOM
-    document.body.appendChild(damageElement);
-    
-    // Posicionar elemento sobre a entidade
-    const updatePosition = () => {
-      if (!entity.model) {
-        // Entidade não existe mais, remover elemento
-        if (damageElement.parentNode) {
-          damageElement.parentNode.removeChild(damageElement);
-        }
+    try {
+      if (!entity || !entity.model) {
+        console.warn("[UI] Tentativa de mostrar dano em entidade inválida");
         return;
       }
       
-      // Obter posição da entidade no espaço 3D
-      const entityPosition = new THREE.Vector3();
-      entity.model.getWorldPosition(entityPosition);
+      console.log(`[${entity.id || 'Entity'}] Mostrando efeito de dano: ${amount}`);
       
-      // Converter para coordenadas de tela
-      const canvas = document.querySelector('canvas');
-      if (!canvas) return;
+      // Determinar cor baseada no tipo de dano
+      let color = '#ffffff'; // branco (padrão)
       
-      const canvasRect = canvas.getBoundingClientRect();
-      const vector = entityPosition.clone();
-      
-      // Ajustar Y para mostrar acima da entidade
-      vector.y += 1.5;
-      
-      // Ajustar Z se necessário (quanto menor, mais longe)
-      
-      // Converter para coordenadas NDC (-1 a +1)
-      vector.project(window.game.renderer.camera);
-      
-      // Converter para coordenadas de tela
-      const x = (vector.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
-      const y = -(vector.y * 0.5 - 0.5) * canvasRect.height + canvasRect.top;
-      
-      // Aplicar posição
-      damageElement.style.left = `${x}px`;
-      damageElement.style.top = `${y}px`;
-      damageElement.style.transform = 'translate(-50%, -50%)';
-    };
-    
-    // Posicionar inicialmente
-    updatePosition();
-    
-    // Animar o número de dano
-    let elapsed = 0;
-    const duration = 1000; // 1 segundo
-    const startTime = Date.now();
-    const initialY = parseFloat(damageElement.style.top);
-    
-    // Função de animação
-    const animate = () => {
-      elapsed = Date.now() - startTime;
-      
-      if (elapsed < duration) {
-        // Atualizar posição
-        updatePosition();
-        
-        // Animar movimento para cima com fade out
-        const progress = elapsed / duration;
-        const offsetY = -50 * progress; // move para cima
-        damageElement.style.opacity = 1 - progress; // fade out
-        damageElement.style.transform = `translate(-50%, calc(-50% + ${offsetY}px))`;
-        
-        requestAnimationFrame(animate);
-      } else {
-        // Remover elemento no fim da animação
-        if (damageElement.parentNode) {
-          damageElement.parentNode.removeChild(damageElement);
-        }
+      if (type === 'physical') {
+        color = '#ff4444'; // vermelho
+      } else if (type === 'magical') {
+        color = '#44aaff'; // azul
+      } else if (type === 'fire') {
+        color = '#ff6600'; // laranja
+      } else if (type === 'ice') {
+        color = '#66ccff'; // azul claro
+      } else if (type === 'poison') {
+        color = '#66ff66'; // verde
+      } else if (type === 'heal') {
+        color = '#66ff66'; // verde
+        amount = '+' + amount; // adicionar + para cura
       }
-    };
+      
+      // Ajustar tamanho e cor para críticos
+      const fontSize = options.critical ? '24px' : '18px';
+      const fontWeight = options.critical ? 'bold' : 'normal';
+      
+      // Criar elemento HTML para o número de dano
+      const damageElement = document.createElement('div');
+      damageElement.textContent = amount;
+      damageElement.style.position = 'absolute';
+      damageElement.style.color = color;
+      damageElement.style.fontFamily = 'Arial, sans-serif';
+      damageElement.style.fontSize = fontSize;
+      damageElement.style.fontWeight = fontWeight;
+      damageElement.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)';
+      damageElement.style.pointerEvents = 'none';
+      damageElement.style.zIndex = '1000';
+      
+      // Adicionar ao DOM
+      document.body.appendChild(damageElement);
+      
+      // Posicionar elemento sobre a entidade
+      const updatePosition = () => {
+        if (!entity.model) {
+          // Entidade não existe mais, remover elemento
+          if (damageElement.parentNode) {
+            damageElement.parentNode.removeChild(damageElement);
+          }
+          return;
+        }
+        
+        try {
+          // Obter posição da entidade no espaço 3D
+          const entityPosition = new THREE.Vector3();
+          entity.model.getWorldPosition(entityPosition);
+          
+          // Converter para coordenadas de tela
+          const canvas = document.querySelector('canvas');
+          if (!canvas) return;
+          
+          const canvasRect = canvas.getBoundingClientRect();
+          const vector = entityPosition.clone();
+          
+          // Ajustar Y para mostrar acima da entidade
+          vector.y += 1.5;
+          
+          // Verificar se a câmera está disponível
+          if (!window.game || !window.game.renderer || !window.game.renderer.camera) {
+            console.error("[UI] Câmera não disponível para projeção");
+            if (damageElement.parentNode) {
+              damageElement.parentNode.removeChild(damageElement);
+            }
+            return;
+          }
+          
+          // Projetar para coordenadas 2D
+          vector.project(window.game.renderer.camera);
+          
+          // Converter de coordenadas normalizadas (-1 a +1) para coordenadas de tela
+          const x = (vector.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
+          const y = (-vector.y * 0.5 + 0.5) * canvasRect.height + canvasRect.top;
+          
+          // Aplicar posição
+          damageElement.style.left = `${x}px`;
+          damageElement.style.top = `${y}px`;
+        } catch (error) {
+          console.error("[UI] Erro ao atualizar posição do indicador de dano:", error);
+          // Remover elemento em caso de erro para evitar problemas
+          if (damageElement.parentNode) {
+            damageElement.parentNode.removeChild(damageElement);
+          }
+        }
+      };
+      
+      // Posicionar inicialmente
+      updatePosition();
+      
+      // Animar o elemento
+      let elapsed = 0;
+      const duration = 1000; // 1 segundo
+      const startTime = Date.now();
+      const initialY = parseFloat(damageElement.style.top);
+      
+      // Função de animação
+      const animate = () => {
+        elapsed = Date.now() - startTime;
+        
+        if (elapsed < duration) {
+          // Atualizar posição
+          updatePosition();
+          
+          // Animar movimento para cima com fade out
+          const progress = elapsed / duration;
+          const offsetY = -50 * progress; // move para cima
+          damageElement.style.opacity = 1 - progress; // fade out
+          damageElement.style.transform = `translate(-50%, calc(-50% + ${offsetY}px))`;
+          
+          requestAnimationFrame(animate);
+        } else {
+          // Remover elemento no fim da animação
+          if (damageElement.parentNode) {
+            damageElement.parentNode.removeChild(damageElement);
+          }
+        }
+      };
+      
+      // Iniciar animação
+      requestAnimationFrame(animate);
+    } catch (error) {
+      console.error("[UI] Erro ao mostrar número de dano:", error);
+    }
+  }
+  
+  /**
+   * Criar e mostrar o painel de depuração
+   */
+  createDebugPanel() {
+    // Criar um painel flutuante de depuração
+    const debugPanel = createElement('div', {
+      position: 'fixed',
+      top: '10px',
+      right: '10px',
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      color: 'white',
+      padding: '10px',
+      borderRadius: '5px',
+      zIndex: '1000',
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      width: '250px',
+      display: 'none'
+    });
     
-    // Iniciar animação
-    requestAnimationFrame(animate);
+    // Adicionar título
+    const title = createElement('div', {
+      fontWeight: 'bold',
+      marginBottom: '10px',
+      borderBottom: '1px solid #666',
+      paddingBottom: '5px',
+      textAlign: 'center'
+    }, {}, 'Painel de Depuração');
+    
+    // Criar opções do painel
+    const options = [
+      { id: 'enabled', label: 'Debug Ativado', type: 'checkbox' },
+      { id: 'logCombat', label: 'Logs de Combate', type: 'checkbox' },
+      { id: 'logMovement', label: 'Logs de Movimento', type: 'checkbox' },
+      { id: 'logNetwork', label: 'Logs de Rede', type: 'checkbox' },
+      { id: 'showHitboxes', label: 'Mostrar Hitboxes', type: 'checkbox' },
+      { id: 'immortalPlayer', label: 'Jogador Imortal', type: 'checkbox' },
+      { id: 'oneShotKill', label: 'One Shot Kill', type: 'checkbox' },
+      { id: 'showStats', label: 'Estatísticas', type: 'checkbox' }
+    ];
+    
+    // Adicionar opções ao painel
+    const optionsContainer = createElement('div', {
+      marginBottom: '10px'
+    });
+    
+    // Para cada opção, criar um controle
+    options.forEach(option => {
+      const row = createElement('div', {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '5px'
+      });
+      
+      const label = createElement('label', {
+        marginRight: '10px'
+      }, {
+        for: `debug-${option.id}`
+      }, option.label);
+      
+      const input = createElement('input', {}, {
+        type: option.type,
+        id: `debug-${option.id}`,
+        checked: window.game?.DEBUG_CONFIG?.[option.id]
+      });
+      
+      // Adicionar evento de mudança
+      input.addEventListener('change', (e) => {
+        if (window.game && window.game.toggleDebugOption) {
+          window.game.toggleDebugOption(option.id, e.target.checked);
+        }
+      });
+      
+      row.appendChild(label);
+      row.appendChild(input);
+      optionsContainer.appendChild(row);
+    });
+    
+    // Adicionar estatísticas
+    const statsContainer = createElement('div', {
+      marginTop: '10px',
+      padding: '5px',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      borderRadius: '3px',
+      fontFamily: 'monospace',
+      fontSize: '11px'
+    }, {
+      id: 'debug-stats'
+    });
+    
+    // Adicionar botão para abrir/fechar
+    const toggleButton = createElement('button', {
+      position: 'fixed',
+      top: '10px',
+      right: '10px',
+      zIndex: '1001',
+      padding: '5px 10px',
+      backgroundColor: '#333',
+      color: 'white',
+      border: 'none',
+      borderRadius: '3px',
+      cursor: 'pointer'
+    }, {}, 'Debug');
+    
+    // Adicionar evento de clique
+    toggleButton.addEventListener('click', () => {
+      if (debugPanel.style.display === 'none') {
+        debugPanel.style.display = 'block';
+        toggleButton.textContent = 'Fechar';
+      } else {
+        debugPanel.style.display = 'none';
+        toggleButton.textContent = 'Debug';
+      }
+    });
+    
+    // Montar o painel
+    debugPanel.appendChild(title);
+    debugPanel.appendChild(optionsContainer);
+    debugPanel.appendChild(statsContainer);
+    
+    // Adicionar ao documento
+    document.body.appendChild(debugPanel);
+    document.body.appendChild(toggleButton);
+    
+    // Atualizar estatísticas periodicamente
+    setInterval(() => {
+      if (debugPanel.style.display !== 'none' && window.game) {
+        const stats = {
+          FPS: Math.round(1000 / ((window.performance.now() - (this._lastTime || 0)) || 1)),
+          Entities: window.game.entityManager?.monsters.size + ' monstros, ' + window.game.entityManager?.players.size + ' jogadores',
+          Memory: Math.round(window.performance.memory?.usedJSHeapSize / 1048576) + 'MB / ' + Math.round(window.performance.memory?.jsHeapSizeLimit / 1048576) + 'MB'
+        };
+        
+        // Atualizar o container
+        statsContainer.innerHTML = Object.entries(stats)
+          .map(([key, value]) => `<div>${key}: ${value}</div>`)
+          .join('');
+        
+        this._lastTime = window.performance.now();
+      }
+    }, 1000);
+    
+    return debugPanel;
   }
 } 

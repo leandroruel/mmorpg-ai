@@ -10,7 +10,7 @@ export class Entity {
     this.data = data;
     this.scene = scene;
     this.model = null;
-    this.nameSprite = null;
+    this.nameTag = null;
     this.isMoving = false;
     this.movementDirection = new THREE.Vector3();
     this.targetPosition = new THREE.Vector3();
@@ -55,26 +55,57 @@ export class Entity {
   }
   
   /**
-   * Cria um sprite com o nome da entidade
+   * Cria ou atualiza a tag de nome da entidade
    * @param {string} name - Nome a ser exibido
    * @param {number} yOffset - Deslocamento vertical
    */
   createNameTag(name, yOffset = 1.5) {
-    if (!this.model) return;
+    if (!this.model) return null;
+    
+    // Se já existe uma nametag, removê-la primeiro
+    if (this.nameTag) {
+      this.scene.remove(this.nameTag);
+      this.nameTag.material.dispose();
+      if (this.nameTag.material.map) {
+        this.nameTag.material.map.dispose();
+      }
+      this.nameTag = null;
+    }
     
     // Criar textura com o nome
     const texture = createTextTexture(name);
-    const material = new THREE.SpriteMaterial({ map: texture });
+    const material = new THREE.SpriteMaterial({ 
+      map: texture,
+      depthTest: false
+    });
     
     // Criar sprite
-    this.nameSprite = new THREE.Sprite(material);
-    this.nameSprite.position.set(0, yOffset, 0);
-    this.nameSprite.scale.set(2, 0.5, 1);
+    this.nameTag = new THREE.Sprite(material);
     
-    // Adicionar ao modelo
-    this.model.add(this.nameSprite);
+    // Ajustar escala para legibilidade
+    this.nameTag.scale.set(2, 0.5, 1);
     
-    return this.nameSprite;
+    // Adicionar à cena (não ao modelo)
+    this.scene.add(this.nameTag);
+    
+    // Posicionar acima do modelo
+    this.updateNameTagPosition();
+    
+    return this.nameTag;
+  }
+  
+  /**
+   * Atualiza a posição da tag de nome para seguir o modelo
+   */
+  updateNameTagPosition() {
+    if (!this.model || !this.nameTag) return;
+    
+    // Posicionar acima do modelo
+    this.nameTag.position.set(
+      this.model.position.x,
+      this.model.position.y + 2, // 2 unidades acima
+      this.model.position.z
+    );
   }
   
   /**
@@ -84,11 +115,26 @@ export class Entity {
   updatePosition(position) {
     if (!this.model) return;
     
+    // CORREÇÃO: Garantir altura Y fixa para evitar "voar"
+    const FIXED_HEIGHT = 0.5; // Altura padrão para entidades
+    const fixedY = position.y !== undefined ? position.y : FIXED_HEIGHT;
+    
     // Atualizar modelo
-    this.model.position.set(position.x, position.y, position.z);
+    this.model.position.set(
+      position.x, 
+      fixedY, // Usar altura fornecida ou fixa
+      position.z
+    );
     
     // Atualizar dados
-    this.data.position = { ...position };
+    this.data.position = { 
+      x: position.x,
+      y: fixedY,
+      z: position.z
+    };
+    
+    // Atualizar posição da tag de nome
+    this.updateNameTagPosition();
   }
   
   /**
@@ -139,8 +185,8 @@ export class Entity {
   /**
    * Atualiza o movimento da entidade
    * @param {number} moveSpeed - Velocidade de movimento
-   * @param {number} threshold - Limiar de distância para considerar chegada ao destino
-   * @returns {boolean} Indica se a entidade chegou ao destino
+   * @param {number} threshold - Limiar para considerar chegada ao destino
+   * @returns {boolean} Se chegou ao destino
    */
   updateMovement(moveSpeed, threshold = 0.1) {
     if (!this.isMoving || !this.model) return false;
@@ -150,15 +196,8 @@ export class Entity {
     
     // Verificar se chegou ao destino
     if (distanceToTarget < threshold) {
-      this.isMoving = false;
-      this.ignoreLimits = false; // Resetar flag ao chegar ao destino
-      
-      // Executar callback se existir
-      if (this.movementCallback) {
-        const callback = this.movementCallback;
-        this.movementCallback = null;
-        callback();
-      }
+      // CORREÇÃO: Parar o movimento ao chegar ao destino
+      this.stopMovement();
       
       return true;
     }
@@ -191,15 +230,26 @@ export class Entity {
         movementBlocked = true;
       }
       
-      // Se o movimento foi bloqueado completamente, parar
+      // CORREÇÃO: Se o movimento foi bloqueado completamente, parar
       if (movementBlocked && (moveVector.x === 0 && moveVector.z === 0)) {
         this.stopMovement();
         return false;
       }
     }
     
+    // CORREÇÃO: Verificar limites absolutos do mapa
+    const absoluteLimit = 100; // Limite absoluto além do qual o movimento é impossível
+    if (Math.abs(newPosition.x) > absoluteLimit || Math.abs(newPosition.z) > absoluteLimit) {
+      console.log("[Entity] Limite absoluto do mapa atingido, parando movimento");
+      this.stopMovement();
+      return false;
+    }
+    
     // Atualizar posição
     this.model.position.add(moveVector);
+    
+    // CORREÇÃO: Forçar altura Y fixa para evitar "voar" ou "afundar"
+    this.model.position.y = 0.5; // Altura fixa para todas as entidades
     
     // Rotacionar para a direção do movimento
     if (this.movementDirection.length() > 0) {
@@ -214,6 +264,9 @@ export class Entity {
       z: this.model.position.z
     };
     
+    // Atualizar posição da tag de nome
+    this.updateNameTagPosition();
+    
     return false;
   }
   
@@ -222,21 +275,37 @@ export class Entity {
    */
   destroy() {
     if (this.model) {
-      if (this.nameSprite) {
-        this.model.remove(this.nameSprite);
-        this.nameSprite.material.dispose();
-        this.nameSprite.material.map.dispose();
+      // Remover modelo da cena
+      if (this.scene) {
+        this.scene.remove(this.model);
       }
       
-      this.scene.remove(this.model);
-      
+      // Liberar recursos do modelo
       if (this.model.geometry) {
         this.model.geometry.dispose();
       }
-      
       if (this.model.material) {
         this.model.material.dispose();
       }
+      
+      this.model = null;
+    }
+    
+    // Remover tag de nome
+    if (this.nameTag) {
+      if (this.scene) {
+        this.scene.remove(this.nameTag);
+      }
+      
+      if (this.nameTag.material) {
+        this.nameTag.material.dispose();
+      }
+      
+      if (this.nameTag.material && this.nameTag.material.map) {
+        this.nameTag.material.map.dispose();
+      }
+      
+      this.nameTag = null;
     }
   }
 } 
